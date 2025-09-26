@@ -1,0 +1,289 @@
+"""
+Main Program for Button-Activated Halloween Scare with Raspberry Pi 5
+This program integrates button detection, output control, and audio output for Halloween scares.
+"""
+from motion_sensor import ButtonTrigger
+from output_control import OutputDevice
+from audio_output import AudioOutput
+import time
+
+# Configuration
+BUTTON_PIN = 17      # Button pin (BCM numbering)
+OUTPUT_PIN = 18      # LED/Relay pin (BCM numbering)
+
+# Use audio files from the project directory
+import os
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+AUDIO_DIR = os.path.join(PROJECT_DIR, "audio_files")  # Audio files in project directory
+
+USE_PULLUP = True    # Set to True if using internal pull-up resistor
+
+# Define the response to button press
+def button_pressed():
+    """Function called when button is pressed to trigger Halloween scare"""
+    print("Button pressed! Activating Halloween scare...")
+    
+    # Turn on output device (LED or relay) first
+    output.turn_on()  # Turn on immediately
+    print("Output device activated")
+    
+    try:
+        # Check for custom audio files
+        audio_files = audio.list_audio_files()
+        if audio_files:
+            # Play a random audio file if available
+            import random
+            import os
+            import time
+            
+            # Filter for common audio formats
+            valid_audio_files = [f for f in audio_files if f.lower().endswith(('.wav', '.mp3', '.ogg'))]
+            
+            if valid_audio_files:
+                random_file = random.choice(valid_audio_files)
+                audio_path = os.path.join(audio.audio_dir, random_file)
+                print(f"Playing Halloween audio: {random_file}")
+                
+                # Stop any currently playing audio first
+                audio.stop_audio()
+                
+                # Play the audio file
+                success = audio.play_audio_file(audio_path)
+                
+                if success:
+                        # For WAV files, we'll use a blocking approach
+                    if random_file.lower().endswith('.wav'):
+                        # For WAV files, play_audio_file is already blocking, so we don't need to wait
+                        # The function will return when playback is complete
+                        print("WAV playback complete, continuing...")
+                    # For MP3 files, we can estimate duration
+                    elif random_file.lower().endswith('.mp3'):
+                        try:
+                            # Try to get duration info using a subprocess
+                            import subprocess
+                            result = subprocess.run(["mpg123", "--skip", "0", "--test", audio_path], 
+                                                  capture_output=True, text=True, check=False)
+                            
+                            # Look for duration in output
+                            import re
+                            duration_match = re.search(r'(\d+):(\d+)\.(\d+)', result.stderr)
+                            if duration_match:
+                                mins, secs, _ = duration_match.groups()
+                                duration = int(mins) * 60 + int(secs)
+                                print(f"Audio duration: approximately {duration} seconds")
+                                
+                                # Wait for audio to finish (with a safety margin)
+                                time.sleep(min(duration + 1, 30))  # Cap at 30 seconds max
+                            else:
+                                # Default wait time if we can't determine duration
+                                time.sleep(10)  # Wait 10 seconds for audio to play
+                        except Exception as e:
+                            print(f"Error determining audio duration: {e}")
+                            time.sleep(10)  # Default wait time
+                    else:
+                        # For other formats, wait a default time
+                        time.sleep(10)  # Wait 10 seconds for audio to play
+                else:
+                    print("Failed to play audio file, falling back to default sounds")
+                    # Fall back to default sounds
+                    audio.play_alarm(1.0)
+                    time.sleep(2)  # Wait for alarm to finish
+            else:
+                print("No valid audio files found, using default sounds")
+                audio.play_alarm(1.0)
+                time.sleep(2)  # Wait for alarm to finish
+        else:
+            # No audio files available, play default scary sounds
+            print("No audio files found, playing default scary sounds")
+            
+            # Play a spooky alarm sound
+            audio.play_alarm(1.0)
+            time.sleep(2)  # Wait for alarm to finish
+            
+            # Play an eerie melody
+            notes = [196, 147, 196, 220, 196, 147, 110]  # Spooky low notes
+            durations = [0.3, 0.3, 0.3, 0.5, 0.3, 0.3, 0.8]
+            audio.play_melody(notes, durations)
+            time.sleep(3)  # Wait for melody to finish
+    
+    finally:
+        # Always turn off the output device when done, regardless of errors
+        print("Turning off output device")
+        output.turn_off()
+        
+    print("Halloween scare complete")
+
+
+# Initialize components
+print("Initializing Halloween scare components...")
+try:
+    # Set up GPIO
+    import RPi.GPIO as GPIO
+    GPIO.setwarnings(False)  # Disable warnings
+    
+    # Initialize components
+    button = ButtonTrigger(BUTTON_PIN, callback=button_pressed, pull_up=USE_PULLUP)
+    output = OutputDevice(OUTPUT_PIN)
+    audio = AudioOutput(AUDIO_DIR)
+    
+    print("All Halloween scare components initialized successfully")
+except Exception as e:
+    print(f"Error initializing components: {e}")
+    import sys
+    sys.exit(1)
+
+# Test components on startup
+print("\nTesting components:")
+print("1. Testing output device...")
+output.blink(2, 0.2, 0.2)
+
+print("2. Testing audio output...")
+audio.play_tone(440, 0.5)  # Play A4 note
+
+# Check audio system and files
+print("3. Checking audio system...")
+audio.check_audio_system()
+
+# Test audio playback if files exist
+audio_files = audio.list_audio_files()
+if audio_files:
+    print("\nWould you like to test audio playback with synchronized output? (y/n)")
+    print("(This will play a short clip from one of your audio files and activate the output)")
+    print("Press Enter to skip the test...")
+    
+    # Note: In a real deployment, you'd use input() here, but for this code example
+    # we'll just simulate a 'yes' response
+    test_audio = True
+    
+    if test_audio:
+        import random
+        import os
+        # Choose a random audio file
+        test_file = random.choice(audio_files)
+        test_path = os.path.join(audio.audio_dir, test_file)
+        print(f"\nTesting synchronized output with audio: {test_file}")
+        
+        # Turn on the output device
+        print("Activating output device...")
+        output.turn_on()
+        
+        try:
+            # Play just the first few seconds for testing
+            print("Playing short audio clip for testing...")
+            
+            # For WAV files, we'll use a simpler approach
+            if test_file.lower().endswith('.wav'):
+                import subprocess
+                try:
+                    # Use sox to play just the first 3 seconds if available
+                    try:
+                        # Check if sox is installed
+                        subprocess.run(["which", "sox"], check=True, capture_output=True)
+                        # Use sox to trim the audio
+                        print("Using sox to play trimmed WAV file...")
+                        subprocess.run(["play", "-q", test_path, "trim", "0", "3"], check=False)
+                    except:
+                        # Fall back to aplay if sox is not available
+                        print("Sox not available, using aplay...")
+                        # Just play the file and manually stop after 3 seconds
+                        proc = subprocess.Popen(["aplay", "-q", test_path])
+                        import time
+                        time.sleep(3)  # Play for 3 seconds
+                        proc.terminate()  # Then stop
+                        time.sleep(0.1)  # Give it time to clean up
+                        if proc.poll() is None:
+                            proc.kill()  # Force kill if still running
+                    print("Audio test complete")
+                except Exception as e:
+                    print(f"Error during WAV audio test: {e}")
+            # For MP3 files
+            elif test_file.lower().endswith('.mp3'):
+                import subprocess
+                print("Playing short MP3 clip for testing...")
+                try:
+                    # Play for 3 seconds
+                    subprocess.run(["mpg123", "-q", "--skip", "0", "--end", "3", test_path], check=False)
+                    print("Audio test complete")
+                except Exception as e:
+                    print(f"Error during MP3 audio test: {e}")
+            # For other formats
+            else:
+                print("Playing generic audio format...")
+                try:
+                    # Just play and stop after 3 seconds
+                    audio.play_audio_file(test_path)
+                    import time
+                    time.sleep(3)
+                    audio.stop_audio()
+                    print("Audio test complete")
+                except Exception as e:
+                    print(f"Error during audio test: {e}")
+        finally:
+            # Always turn off the output when done
+            print("Deactivating output device...")
+            output.turn_off()
+            
+        print("Synchronized output and audio test complete")
+    else:
+        print("Skipping audio test")
+else:
+    print("\nNo audio files found for testing.")
+    print(f"You can add .wav, .mp3, or .ogg files to: {audio.audio_dir}")
+
+# Setup button detection
+print("\nSetting up button trigger...")
+interrupt_success = button.setup_interrupt()
+if not interrupt_success:
+    print("Note: Using polling mode instead of interrupts. This will still work fine.")
+    print("The button will be checked continuously in the background.")
+
+
+# Initialize GUI if enabled
+USE_GUI = True  # Set to False to disable GUI
+
+if USE_GUI:
+    try:
+        print("\nInitializing GUI interface...")
+        import gui_callback
+        import gui_interface
+        import threading
+        
+        # Register the button_pressed callback with the GUI
+        gui_callback.register_callback(button_pressed)
+        
+        # Start the GUI in a separate thread
+        def start_gui():
+            gui_interface.run_gui(gui_callback.button_callback)
+            
+        gui_thread = threading.Thread(target=start_gui, daemon=True)
+        gui_thread.start()
+        print("GUI interface started successfully")
+    except Exception as e:
+        print(f"Error initializing GUI: {e}")
+        print("Continuing without GUI")
+        USE_GUI = False
+
+# Main loop
+print("\nHalloween scare system ready! Press the button to trigger...")
+try:
+    # Blink LED to indicate system is ready
+    output.blink(3, 0.1, 0.1)
+    
+    print("Press Ctrl+C to exit")
+    while True:
+        # Main program can do other things here if needed
+        time.sleep(1)
+        
+except KeyboardInterrupt:
+    print("\nProgram terminated by user")
+    
+finally:
+    # Clean up
+    try:
+        output.turn_off()
+        output.cleanup()
+        audio.stop_audio()
+        GPIO.cleanup()  # Clean up all GPIO resources
+        print("Halloween scare system shutdown complete - all resources cleaned up")
+    except Exception as e:
+        print(f"Error during cleanup: {e}")
