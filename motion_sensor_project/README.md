@@ -26,6 +26,7 @@ A Raspberry Pi 5 project that uses a button to trigger both an output device (LE
 - Breadboard and jumper wires
 - Micro SD card with Raspberry Pi OS installed
 - Appropriate power supply for Raspberry Pi 5 (USB-C, 5V/5A recommended)
+- TFT touchscreen display (optional, for GUI interface)
 
 ## Circuit Diagram
 
@@ -40,14 +41,12 @@ See the [circuit diagram](docs/circuit_diagram.md) for detailed connection instr
 3. Insert the microSD card into your Raspberry Pi 5 and boot it up.
 4. Complete the initial setup process for Raspberry Pi OS.
 
-### 2. Install Required Libraries
 
 Open a terminal on your Raspberry Pi and run the following commands to install the required libraries:
 
 ```bash
 sudo apt update
-sudo apt install -y python3-pip python3-numpy python3-pygame mpg123
-pip3 install RPi.GPIO
+sudo apt install -y python3-pip python3-numpy python3-pygame mpg123 vorbis-tools alsa-utils python3-tk RPi.GPIO
 ```
 
 ### 3. Download Project Files
@@ -120,6 +119,66 @@ sudo python3 main.py
 
 The program is designed to synchronize the output and audio behavior. When the button is pressed, the output will turn on immediately, and the audio will start playing. The output will remain on for the duration of the audio playback, and will automatically turn off when the audio finishes. This ensures that the output and audio are always in sync, creating a more immersive and frightening experience for your visitors.
 
+## GUI Interface
+
+The project includes a touchscreen GUI interface that provides an on-screen button labeled "FEED THE BEAST" which triggers the same scare effect as the physical button. This allows you to control the Halloween scare system directly from the TFT screen.
+
+### GUI Features:
+
+- Fullscreen interface optimized for touchscreens
+- Large, easy-to-press button labeled "FEED THE BEAST"
+- Visual feedback when the scare is triggered
+- Status indicator showing when the system is ready
+- Exit button in the top-right corner
+
+### Requirements for GUI:
+
+- TFT touchscreen display connected to the Raspberry Pi
+- Python Tkinter library (`python3-tk` package)
+- X Window System running (desktop environment)
+
+The GUI runs in a separate thread alongside the physical button detection, so you can trigger the scare using either method. To disable the GUI interface, set `USE_GUI = False` in the main.py file.
+
+### Running the GUI
+
+There are several ways to run the GUI interface:
+
+#### 1. Normal Mode
+
+The GUI will start automatically when you run the main program if a display is available:
+
+```bash
+sudo python3 code/main.py
+```
+
+#### 2. Test Mode
+
+To test just the GUI without activating any hardware:
+
+```bash
+python3 code/run_gui.py
+```
+
+#### 3. Kiosk Mode
+
+To set up the system to run in kiosk mode (fullscreen GUI that starts automatically on boot):
+
+```bash
+sudo python3 code/kiosk_mode.py --setup
+```
+
+This will configure the Raspberry Pi to:
+- Boot directly to the desktop
+- Disable screen blanking/sleep
+- Start the Halloween scare system automatically
+- Run in fullscreen mode
+
+To disable kiosk mode:
+
+```bash
+sudo python3 code/kiosk_mode.py --disable
+```
+
 ## Halloween Customization Ideas
 
 - Connect a relay to control a fog machine when the button is pressed
@@ -171,6 +230,31 @@ The program is designed to synchronize the output and audio behavior. When the b
     # For OGG files
     ogg123 /home/pi/audio_files/your_file.ogg
     ```
+  - Use the included audio test script to diagnose and fix issues:
+    ```bash
+    # Check audio devices
+    python3 code/audio_test.py --check
+    
+    # Force audio to headphone jack
+    python3 code/audio_test.py --headphones
+    
+    # Apply all headphone jack fixes (recommended)
+    python3 code/audio_test.py --fix-headphones
+    
+    # Test headphone jack specifically
+    python3 code/audio_test.py --test-headphones
+    
+    # Test all audio methods
+    python3 code/audio_test.py --all
+    ```
+  - Set the audio output manually:
+    ```bash
+    # Set output to headphone jack
+    amixer cset numid=3 1
+    
+    # Set volume to maximum
+    amixer set Master 100%
+    ```
 
 - **Permission Errors**
   - Make sure to run the program with `sudo` to access GPIO pins
@@ -180,6 +264,14 @@ The program is designed to synchronize the output and audio behavior. When the b
   - Check for error messages in the terminal
   - Verify that all required libraries are installed
   - Make sure GPIO pin numbers match your actual connections
+
+- **GUI Not Appearing**
+  - Make sure you're running in a desktop environment
+  - Verify that python3-tk is installed: `sudo apt install python3-tk`
+  - Check for "No display available" error messages
+  - If using SSH, use X11 forwarding: `ssh -X admin@yumpi`
+  - Try setting the DISPLAY variable: `export DISPLAY=:0`
+  - Run just the GUI test script: `python3 code/run_gui.py`
 
 ## License
 

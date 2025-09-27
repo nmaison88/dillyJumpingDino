@@ -15,6 +15,9 @@ ssh ${PI_USER}@${PI_HOST} "mkdir -p ${PI_PROJECT_DIR}/code ${PI_PROJECT_DIR}/doc
 echo "Copying code files..."
 scp /Users/nethmaison/dev/dillyJumpingDino/motion_sensor_project/code/*.py ${PI_USER}@${PI_HOST}:${PI_PROJECT_DIR}/code/
 
+# Make GUI files executable
+ssh ${PI_USER}@${PI_HOST} "chmod +x ${PI_PROJECT_DIR}/code/gui_interface.py"
+
 # Copy documentation
 echo "Copying documentation..."
 scp /Users/nethmaison/dev/dillyJumpingDino/motion_sensor_project/docs/circuit_diagram.md ${PI_USER}@${PI_HOST}:${PI_PROJECT_DIR}/docs/

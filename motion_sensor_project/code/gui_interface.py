@@ -28,7 +28,7 @@ class HalloweenScareGUI:
         self.cooldown_time = 3  # Seconds to wait before allowing another press
         
         # Configure the window
-        self.root.title("Halloween Scare Control")
+        self.root.title("Feed The Beast")
         self.root.attributes('-fullscreen', True)  # Fullscreen for TFT display
         
         # Get screen dimensions
@@ -42,61 +42,61 @@ class HalloweenScareGUI:
         self.main_frame = tk.Frame(self.root, bg='black')
         self.main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Add a title
-        title_font = tkfont.Font(family="Arial", size=36, weight="bold")
-        self.title_label = tk.Label(
-            self.main_frame, 
-            text="HALLOWEEN SCARE CONTROL", 
-            font=title_font,
-            fg='orange',
-            bg='black'
-        )
-        self.title_label.pack(pady=(50, 30))
+        # Add some padding at the top
+        top_padding = tk.Frame(self.main_frame, height=50, bg='black')
+        top_padding.pack(fill='x', pady=(30, 20))
         
-        # Create a large button
-        button_font = tkfont.Font(family="Arial", size=48, weight="bold")
+        # Create a large button that fits the screen
+        # Get screen width to calculate appropriate button size
+        button_width = min(int(screen_width / 30), 15)  # Adjust width based on screen size
+        
+        # Adjust font size based on screen width
+        font_size = min(int(screen_width / 25), 48)  # Cap at 48pt
+        button_font = tkfont.Font(family="Arial", size=font_size, weight="bold")
+        
+        # Create button frame to center the button
+        button_frame = tk.Frame(self.main_frame, bg='black')
+        button_frame.pack(fill='x', pady=50)
+        
         self.scare_button = tk.Button(
-            self.main_frame,
-            text="FEED THE BEAST",
+            button_frame,
+            text="FEED BEAST",  # Shortened text to ensure it fits
             font=button_font,
             bg='darkred',
             fg='white',
             activebackground='red',
             activeforeground='white',
             height=3,
-            width=15,
+            width=button_width,
             relief=tk.RAISED,
             bd=8,
-            command=self.on_button_press
+            command=self.on_button_press,
+            wraplength=screen_width - 100  # Allow text to wrap if needed
         )
-        self.scare_button.pack(pady=50)
+        self.scare_button.pack(expand=True, fill='both', padx=50)
         
-        # Add a status label
-        status_font = tkfont.Font(family="Arial", size=24)
+        # Add a status label with size based on screen width
+        status_font_size = min(int(screen_width / 40), 24)  # Cap at 24pt
+        status_font = tkfont.Font(family="Arial", size=status_font_size)
+        
+        # Create a frame for the status label
+        status_frame = tk.Frame(self.main_frame, bg='black')
+        status_frame.pack(fill='x', pady=30)
+        
         self.status_label = tk.Label(
-            self.main_frame,
-            text="Ready to scare!",
+            status_frame,
+            text="Ready to feed!",
             font=status_font,
             fg='green',
-            bg='black'
+            bg='black',
+            wraplength=screen_width - 100  # Allow text to wrap if needed
         )
-        self.status_label.pack(pady=30)
+        self.status_label.pack(expand=True)
         
-        # Add an exit button (smaller, in the corner)
-        exit_button = tk.Button(
-            self.root,
-            text="X",
-            font=("Arial", 16),
-            bg='darkred',
-            fg='white',
-            width=3,
-            height=1,
-            command=self.exit_application
-        )
-        exit_button.place(x=screen_width-60, y=10)
-        
-        # Add keyboard shortcut to exit (Escape key)
-        self.root.bind('<Escape>', lambda e: self.exit_application())
+        # No visible exit button - but add a hidden key sequence for developers
+        # This requires pressing Ctrl+Alt+Q to exit (unlikely to be pressed accidentally)
+        self.key_sequence = []
+        self.root.bind('<KeyPress>', self._check_dev_exit_sequence)
         
     def on_button_press(self):
         """Handle button press event"""
@@ -105,8 +105,8 @@ class HalloweenScareGUI:
             
         # Update UI to show button was pressed
         self.button_active = False
-        self.scare_button.config(bg='red', text="SCARING...")
-        self.status_label.config(text="Scare in progress!", fg='red')
+        self.scare_button.config(bg='red', text="FEEDING...")
+        self.status_label.config(text="Feeding in progress!", fg='red')
         
         # Call the callback function if provided
         if self.button_callback:
@@ -134,8 +134,19 @@ class HalloweenScareGUI:
     def _reset_button(self):
         """Reset button to original state"""
         self.button_active = True
-        self.scare_button.config(bg='darkred', text="FEED THE BEAST")
-        self.status_label.config(text="Ready to scare!", fg='green')
+        self.scare_button.config(bg='darkred', text="FEED BEAST")
+        self.status_label.config(text="Ready to feed!", fg='green')
+    
+    def _check_dev_exit_sequence(self, event):
+        """Check for developer exit key sequence (Ctrl+Alt+Q)"""
+        # Check if Ctrl and Alt are pressed
+        ctrl = (event.state & 0x4) != 0  # Control key
+        alt = (event.state & 0x8) != 0   # Alt key
+        
+        # If Ctrl+Alt+Q is pressed, exit the application
+        if ctrl and alt and event.keysym == 'q':
+            print("Developer exit sequence detected")
+            self.exit_application()
     
     def exit_application(self):
         """Exit the application"""
@@ -161,23 +172,60 @@ def register_callback(callback_function):
     print("GUI callback registered successfully")
 """)
 
+def is_display_available():
+    """
+    Check if a display server is available for GUI
+    """
+    import os
+    
+    # Check for DISPLAY environment variable
+    if 'DISPLAY' not in os.environ:
+        return False
+    
+    # Try to initialize Tk
+    try:
+        test_root = tk.Tk()
+        test_root.destroy()
+        return True
+    except Exception:
+        return False
+
 def run_gui(button_callback=None):
     """
     Run the GUI application
     
     Args:
         button_callback: Function to call when button is pressed
+        
+    Returns:
+        True if GUI was started successfully, False otherwise
     """
-    root = tk.Tk()
-    app = HalloweenScareGUI(root, button_callback)
-    root.mainloop()
+    # Check if display is available
+    if not is_display_available():
+        print("ERROR: No display available for GUI")
+        print("To run the GUI, you need to:")
+        print("  1. Run the program in a desktop environment, or")
+        print("  2. Use SSH with X11 forwarding: ssh -X admin@yumpi")
+        print("  3. Set DISPLAY environment variable: export DISPLAY=:0")
+        print("Continuing without GUI...")
+        return False
+    
+    try:
+        root = tk.Tk()
+        app = HalloweenScareGUI(root, button_callback)
+        root.mainloop()
+        return True
+    except Exception as e:
+        print(f"Error starting GUI: {e}")
+        print("Continuing without GUI...")
+        return False
 
 if __name__ == "__main__":
     # When run directly, create a test callback
     def test_callback():
-        print("Button pressed! This would trigger the Halloween scare.")
+        print("Button pressed! Feeding the beast...")
         time.sleep(2)
-        print("Scare complete!")
+        print("Feeding complete!")
     
     # Run the GUI with the test callback
     run_gui(test_callback)

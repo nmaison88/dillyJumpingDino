@@ -240,6 +240,7 @@ if not interrupt_success:
 
 # Initialize GUI if enabled
 USE_GUI = True  # Set to False to disable GUI
+GUI_DISPLAY_AVAILABLE = False  # Will be set to True if display is available
 
 if USE_GUI:
     try:
@@ -247,17 +248,33 @@ if USE_GUI:
         import gui_callback
         import gui_interface
         import threading
+        import os
+        
+        # Check if we're running in a desktop environment
+        if 'DISPLAY' not in os.environ and os.path.exists('/dev/fb0'):
+            # If framebuffer is available but no DISPLAY, try to set it
+            print("Framebuffer detected but no DISPLAY set. Trying to set DISPLAY=:0")
+            os.environ['DISPLAY'] = ':0'
         
         # Register the button_pressed callback with the GUI
         gui_callback.register_callback(button_pressed)
         
-        # Start the GUI in a separate thread
-        def start_gui():
-            gui_interface.run_gui(gui_callback.button_callback)
-            
-        gui_thread = threading.Thread(target=start_gui, daemon=True)
-        gui_thread.start()
-        print("GUI interface started successfully")
+        # Check if display is available before starting GUI thread
+        if gui_interface.is_display_available():
+            # Start the GUI in a separate thread
+            def start_gui():
+                success = gui_interface.run_gui(gui_callback.button_callback)
+                if not success:
+                    print("Failed to start GUI. Continuing with physical button only.")
+                    
+            gui_thread = threading.Thread(target=start_gui, daemon=True)
+            gui_thread.start()
+            print("GUI interface thread started")
+            GUI_DISPLAY_AVAILABLE = True
+        else:
+            print("No display available for GUI. Continuing with physical button only.")
+            print("To use the GUI, make sure you're running in a desktop environment.")
+            print("If using SSH, try: ssh -X admin@yumpi")
     except Exception as e:
         print(f"Error initializing GUI: {e}")
         print("Continuing without GUI")

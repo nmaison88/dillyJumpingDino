@@ -13,12 +13,67 @@ from pygame import mixer
 
 # Initialize pygame mixer
 try:
+    # Try to initialize with specific device settings for headphone output
     pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=2048)
     PYGAME_AVAILABLE = True
 except Exception as e:
     PYGAME_AVAILABLE = False
     print(f"Error initializing pygame mixer: {e}")
     print("Install pygame for audio playback: pip install pygame")
+
+# Configure system audio to use headphone jack
+def configure_audio_output():
+    """Configure system audio to use headphone jack"""
+    try:
+        # Set the audio output to analog (headphone jack)
+        import subprocess
+        print("Configuring audio output to use headphone jack...")
+        
+        # Based on the audio test results, we know the headphone jack is card 1
+        # Method 1: Using amixer to set the default audio device
+        try:
+            # Set the default audio device to card 1 (Headphones)
+            subprocess.run(["amixer", "cset", "numid=3", "1"], check=False)
+            print("Set default audio device to headphone jack")
+        except Exception as e:
+            print(f"Method 1 failed: {e}")
+            
+        # Method 2: Set volume to maximum
+        try:
+            subprocess.run(["amixer", "set", "Master", "100%"], check=False)
+            print("Set volume to maximum")
+        except Exception as e:
+            print(f"Could not set volume: {e}")
+        
+        # Method 3: Using specific ALSA configuration
+        try:
+            # Create an .asoundrc file to set the default device
+            home_dir = os.path.expanduser("~")
+            asoundrc_path = os.path.join(home_dir, ".asoundrc")
+            
+            with open(asoundrc_path, "w") as f:
+                f.write("""pcm.!default {
+    type hw
+    card 1
+    device 0
+}
+
+ctl.!default {
+    type hw
+    card 1
+}
+""")
+            print(f"Created .asoundrc file at {asoundrc_path}")
+        except Exception as e:
+            print(f"Could not create .asoundrc file: {e}")
+            
+        print("Audio output configuration complete")
+    except Exception as e:
+        print(f"Warning: Could not configure audio output: {e}")
+        print("You may need to manually configure audio output to use the headphone jack")
+
+# Run audio configuration
+configure_audio_output()
 
 class AudioOutput:
     def __init__(self, audio_dir="/home/pi/audio_files"):
@@ -169,69 +224,157 @@ class AudioOutput:
         # Make sure any previous playback is stopped
         self.stop_audio()
         
+        # Ensure audio is routed to headphone jack
+        self._ensure_headphone_output()
+        
         # For WAV files, use a simpler approach to avoid memory issues
         if filename.lower().endswith('.wav'):
             try:
-                # Use a simple subprocess call instead of Popen for WAV files
-                # This will block until complete, but is more reliable
-                print("Using simple subprocess for WAV playback")
-                subprocess.run(["aplay", "-q", filename], check=False)
-                print("WAV playback complete")
-                return True
+                # Try multiple methods to play WAV files
+                print("Playing WAV file through headphone jack...")
+                
+                # Method 1: aplay with headphone device specification (card 1)
+                try:
+                    # Use card 1 (Headphones) based on audio test results
+                    subprocess.run(["aplay", "-D", "plughw:1,0", "-q", filename], check=False)
+                    print("WAV playback complete using plughw:1,0 (headphone jack)")
+                    return True
+                except Exception as e:
+                    print(f"Method 1 failed: {e}, trying next method...")
+                
+                # Method 2: standard aplay
+                try:
+                    subprocess.run(["aplay", "-q", filename], check=False)
+                    print("WAV playback complete using standard aplay")
+                    return True
+                except Exception as e:
+                    print(f"Method 2 failed: {e}, trying next method...")
+                    
+                # Method 3: Try pygame
+                if PYGAME_AVAILABLE:
+                    try:
+                        pygame.mixer.music.load(filename)
+                        pygame.mixer.music.play()
+                        # Wait for playback to complete
+                        while pygame.mixer.music.get_busy():
+                            time.sleep(0.1)
+                        print("WAV playback complete using pygame")
+                        return True
+                    except Exception as e:
+                        print(f"Method 3 failed: {e}")
+                        
+                print("All WAV playback methods failed")
+                return False
             except Exception as e:
                 print(f"Error playing WAV file: {e}")
                 return False
         
-        # For other formats, try pygame first
-        if PYGAME_AVAILABLE:
+        # For MP3 files
+        elif filename.lower().endswith('.mp3'):
+            # Try multiple methods for MP3
+            
+            # Method 1: Try pygame first
+            if PYGAME_AVAILABLE:
+                try:
+                    # Set volume to maximum
+                    pygame.mixer.music.set_volume(1.0)
+                    
+                    # Load and play the file
+                    pygame.mixer.music.load(filename)
+                    pygame.mixer.music.play()
+                    
+                    # Give a moment for playback to start
+                    time.sleep(0.1)
+                    
+                    if pygame.mixer.music.get_busy():
+                        print("MP3 playback started with pygame")
+                        return True
+                except Exception as e:
+                    print(f"Pygame MP3 playback failed: {e}, trying next method...")
+            
+            # Method 2: Try mpg123 with specific output device (headphone jack)
             try:
-                # Set volume to maximum
-                pygame.mixer.music.set_volume(1.0)
+                # Try to use the headphone jack directly (card 1)
+                cmd = ["mpg123", "-a", "hw:1,0", "-q", filename]
+                print(f"Playing with command: {' '.join(cmd)}")
+                process = subprocess.Popen(cmd)
                 
-                # Load and play the file
-                pygame.mixer.music.load(filename)
-                pygame.mixer.music.play()
+                # Store the process only if it started successfully
+                if process.poll() is None:
+                    self.current_process = process
+                    print("MP3 playback started with mpg123 using hw:1,0 (headphone jack)")
+                    return True
+            except Exception as e:
+                print(f"mpg123 with device specification failed: {e}, trying next method...")
+            
+            # Method 3: Standard mpg123
+            try:
+                cmd = ["mpg123", "-q", filename]
+                print(f"Playing with command: {' '.join(cmd)}")
+                process = subprocess.Popen(cmd)
                 
-                # Give a moment for playback to start
-                time.sleep(0.1)
+                if process.poll() is None:
+                    self.current_process = process
+                    print("MP3 playback started with standard mpg123")
+                    return True
+            except Exception as e:
+                print(f"Standard mpg123 failed: {e}")
                 
-                if pygame.mixer.music.get_busy():
-                    print("Audio playback started with pygame")
+            print("All MP3 playback methods failed")
+            return False
+        
+        # For other formats
+        else:
+            # Try pygame first
+            if PYGAME_AVAILABLE:
+                try:
+                    pygame.mixer.music.load(filename)
+                    pygame.mixer.music.play()
+                    time.sleep(0.1)
+                    if pygame.mixer.music.get_busy():
+                        print("Audio playback started with pygame")
+                        return True
+                except Exception as e:
+                    print(f"Pygame playback failed: {e}, trying system commands...")
+            
+            # Use system command as fallback
+            try:
+                # Choose the appropriate command based on file type
+                if filename.lower().endswith('.ogg'):
+                    cmd = ["ogg123", "-d", "alsa", "-q", filename]  # Specify ALSA output
+                else:
+                    cmd = ["aplay", "-D", "plughw:0,0", "-q", filename]  # Try with device specification
+                    
+                print(f"Playing with command: {' '.join(cmd)}")
+                process = subprocess.Popen(cmd)
+                
+                if process.poll() is None:
+                    self.current_process = process
+                    print("Audio playback started with system command")
                     return True
                 else:
-                    print("Pygame couldn't play the file, trying system commands")
+                    print("Failed to start audio playback process")
+                    return False
+                    
             except Exception as e:
-                print(f"Error playing audio with pygame: {e}")
-                # Fall back to system command
-        
-        # Use system command to play audio as fallback
-        try:
-            # Choose the appropriate command based on file type
-            if filename.lower().endswith('.mp3'):
-                cmd = ["mpg123", "-q", filename]  # -q for quiet mode (less output)
-            elif filename.lower().endswith('.ogg'):
-                cmd = ["ogg123", "-q", filename]  # -q for quiet mode
-            else:
-                # Try aplay as a generic player
-                cmd = ["aplay", "-q", filename]
-                
-            print(f"Playing with command: {' '.join(cmd)}")
-            
-            # Create a new process
-            process = subprocess.Popen(cmd)
-            
-            # Store the process only if it started successfully
-            if process.poll() is None:
-                self.current_process = process
-                print("Audio playback started with system command")
-                return True
-            else:
-                print("Failed to start audio playback process")
+                print(f"Error playing audio file with system command: {e}")
                 return False
                 
+    def _ensure_headphone_output(self):
+        """Ensure audio is routed to the headphone jack"""
+        try:
+            # Try to force audio to the headphone jack (card 1)
+            subprocess.run(["amixer", "cset", "numid=3", "1"], check=False)
+            
+            # Set volume to maximum
+            subprocess.run(["amixer", "set", "Master", "100%"], check=False)
+            
+            # Create a temporary ALSA config for this process if needed
+            # This ensures we're using the headphone jack (card 1)
+            os.environ['ALSA_CARD'] = '1'
         except Exception as e:
-            print(f"Error playing audio file with system command: {e}")
-            return False
+            print(f"Warning: Could not ensure headphone output: {e}")
+            # Continue anyway, as we have multiple fallback methods
     
     def stop_audio(self):
         """
