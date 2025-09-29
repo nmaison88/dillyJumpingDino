@@ -179,29 +179,55 @@ sudo python3 code/main.py
 
 To test just the GUI without activating any hardware:
 
-```bash
 python3 code/run_gui.py
-```
-
 #### 3. Kiosk Mode
 
 To set up the system to run in kiosk mode (fullscreen GUI that starts automatically on boot):
 
 ```bash
 sudo python3 code/kiosk_mode.py --setup
+sudo reboot
 ```
 
-This will configure the Raspberry Pi to:
-- Boot directly to the desktop
-- Disable screen blanking/sleep
-- Start the Halloween scare system automatically
-- Run in fullscreen mode
+This will:
+1. Install necessary packages
+2. Disable screen blanking
+3. Create an autostart entry
+4. Configure the system to start the GUI on boot
+5. Create a systemd service for more reliable startup
 
-To disable kiosk mode:
+#### Kiosk Mode Commands
 
 ```bash
+# Set up kiosk mode (full setup)
+sudo python3 code/kiosk_mode.py --setup
+
+# Enable just the autostart file
+python3 code/kiosk_mode.py --enable
+
+# Disable kiosk mode completely
 sudo python3 code/kiosk_mode.py --disable
+
+# Check kiosk mode status
+python3 code/kiosk_mode.py --status
 ```
+
+#### Troubleshooting Kiosk Mode
+
+If kiosk mode is not working after setup, use the fix script:
+
+```bash
+sudo bash code/fix_kiosk.sh
+sudo reboot
+```
+
+This script will:
+1. Check and install required packages
+2. Fix file permissions
+3. Create a systemd service
+4. Configure screen blanking prevention
+5. Set up the display environment
+6. Configure audio output
 
 ## Halloween Customization Ideas
 
@@ -274,6 +300,16 @@ output = CombinedOutputControl(output_type="usb_relay", usb_port="/dev/ttyUSB0")
     sudo modprobe ch341
     sudo modprobe usbserial
     ```
+    
+- **Kiosk Mode Not Starting on Boot**
+  - Run the fix script: `sudo bash code/fix_kiosk.sh`
+  - Check the status: `python3 code/kiosk_mode.py --status`
+  - Check systemd service logs: `sudo journalctl -u halloween-scare.service`
+  - Verify the display environment: `echo $DISPLAY` (should be `:0`)
+  - Check if the service is running: `sudo systemctl status halloween-scare.service`
+  - Try manually starting the service: `sudo systemctl start halloween-scare.service`
+  - Check for permission issues: `ls -la /home/pi/motion_sensor_project/code/`
+  - Verify the GUI works manually: `DISPLAY=:0 python3 code/run_gui.py`
 
 - **No Audio Output**
   - Check that your speakers are properly connected and powered on
