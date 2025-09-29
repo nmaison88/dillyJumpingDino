@@ -15,8 +15,8 @@ ssh ${PI_USER}@${PI_HOST} "mkdir -p ${PI_PROJECT_DIR}/code ${PI_PROJECT_DIR}/doc
 echo "Copying code files..."
 scp /Users/nethmaison/dev/dillyJumpingDino/motion_sensor_project/code/*.py ${PI_USER}@${PI_HOST}:${PI_PROJECT_DIR}/code/
 
-# Make GUI files executable
-ssh ${PI_USER}@${PI_HOST} "chmod +x ${PI_PROJECT_DIR}/code/gui_interface.py"
+# Make executable files executable
+ssh ${PI_USER}@${PI_HOST} "chmod +x ${PI_PROJECT_DIR}/code/gui_interface.py ${PI_PROJECT_DIR}/code/usb_relay_control.py ${PI_PROJECT_DIR}/code/test_output.py"
 
 # Copy documentation
 echo "Copying documentation..."
@@ -33,6 +33,11 @@ echo "To run the Halloween scare system:"
 echo "  1. SSH into your Raspberry Pi: ssh ${PI_USER}@${PI_HOST}"
 echo "  2. Navigate to the project directory: cd ${PI_PROJECT_DIR}"
 echo "  3. Run the program: sudo python3 code/main.py"
+echo ""
+echo "To test the USB relay (if using):"
+echo "  1. Connect the USB relay to the Raspberry Pi"
+echo "  2. Run: sudo python3 code/usb_relay_control.py"
+echo "  3. Or for more options: sudo python3 code/test_output.py --usb"
 echo ""
 echo "Audio files location:"
 echo "  - Local: ${LOCAL_PROJECT_DIR}/audio_files"

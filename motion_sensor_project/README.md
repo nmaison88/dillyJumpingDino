@@ -19,8 +19,9 @@ A Raspberry Pi 5 project that uses a button to trigger both an output device (LE
 
 - Raspberry Pi 5
 - Momentary push button (normally open)
-- LED or relay module (for controlling lights, fog machines, or other props)
-- 220-330 ohm resistor for LED
+- One of the following output options:
+  - GPIO-controlled relay module or LED (with 220-330 ohm resistor)
+  - USB relay module (CH340 chip-based, controlled via serial commands)
 - 10K ohm resistor for button (optional if using internal pull-up)
 - USB, Bluetooth, or 3.5mm jack compatible speaker or amplifier
 - Breadboard and jumper wires
@@ -31,6 +32,23 @@ A Raspberry Pi 5 project that uses a button to trigger both an output device (LE
 ## Circuit Diagram
 
 See the [circuit diagram](docs/circuit_diagram.md) for detailed connection instructions.
+
+## Output Options
+
+### GPIO Relay/LED
+The traditional setup uses a GPIO pin to control an LED or relay module. This requires wiring the relay to the appropriate GPIO pin on the Raspberry Pi.
+
+### USB Relay
+Alternatively, you can use a USB relay module that connects via USB and is controlled through serial commands. This is easier to set up as it doesn't require any GPIO wiring - just plug it into a USB port.
+
+#### USB Relay Requirements:
+- CH340 USB-to-serial chip based relay module
+- Uses the following serial commands:
+  - Turn ON: `A0 01 01 A2` (hex)
+  - Turn OFF: `A0 01 00 A1` (hex)
+- Baud rate: 9600
+
+The system will automatically detect which output method to use. If a USB relay is connected, it will use that; otherwise, it will fall back to the GPIO relay/LED.
 
 ## Software Setup
 
@@ -47,16 +65,22 @@ Open a terminal on your Raspberry Pi and run the following commands to install t
 ```bash
 sudo apt update
 sudo apt install -y python3-pip python3-numpy python3-pygame mpg123 vorbis-tools alsa-utils python3-tk RPi.GPIO
+
+# Install pyserial for USB relay support
+pip3 install pyserial
 ```
 
 ### 3. Download Project Files
 
 Clone the project repository or copy the following files to your Raspberry Pi:
 
-- `motion_sensor.py`
-- `output_control.py`
-- `audio_output.py`
-- `main.py`
+- `motion_sensor.py` - Button trigger functionality
+- `output_control.py` - GPIO-based output control
+- `usb_relay_control.py` - USB relay control
+- `combined_output_control.py` - Unified interface for both output types
+- `audio_output.py` - Audio playback functionality
+- `gui_interface.py` - Touchscreen GUI interface
+- `main.py` - Main program
 
 You can place them in a directory of your choice, for example:
 
@@ -192,7 +216,35 @@ sudo python3 code/kiosk_mode.py --disable
 - Add a motion sensor as an alternative trigger method
 - Connect multiple Raspberry Pis for a coordinated haunted house experience
 
+## Testing the USB Relay
+
+If you're using a USB relay, you can test it separately before running the main program:
+
+```bash
+# Navigate to your project directory
+cd ~/motion_sensor_project
+
+# Run the USB relay test script
+python3 code/usb_relay_control.py
+```
+
+This will attempt to detect your USB relay, turn it on and off, and perform a blink test. If successful, you should hear the relay click and see the LED on the relay module change state.
+
+### Manual USB Relay Configuration
+
+If the automatic detection doesn't work, you can manually specify the USB port in `main.py`:
+
+```python
+# Find your USB port first
+python3 -c "import serial.tools.list_ports; print([port.device for port in serial.tools.list_ports.comports()])"
+
+# Then edit main.py to use that specific port
+output = CombinedOutputControl(output_type="usb_relay", usb_port="/dev/ttyUSB0")  # Replace with your port
+```
+
 ## Troubleshooting
+
+### Common Issues
 
 - **Button Not Triggering Scare**
   - Check button connections and wiring
@@ -200,7 +252,6 @@ sudo python3 code/kiosk_mode.py --disable
   - If using pull-up configuration, ensure button connects to ground when pressed
   - If using pull-down configuration, ensure button connects to 3.3V when pressed
   - Try adjusting the debounce time if button presses are inconsistent
-
 - **'Failed to add edge detection' Error**
   - This error can occur if there's a conflict with the GPIO pin
   - The program will automatically fall back to polling mode, which should still work
@@ -208,6 +259,21 @@ sudo python3 code/kiosk_mode.py --disable
     - Try using a different GPIO pin for the button (update `BUTTON_PIN` in main.py)
     - Restart your Raspberry Pi to reset all GPIO states
     - Run `sudo gpio unexportall` before starting the program to reset GPIO
+
+- **USB Relay Not Working**
+  - Make sure the USB relay is properly connected to a USB port
+  - Check that the CH340 driver is installed (`lsusb` should show a device with ID 1a86:7523)
+  - Try unplugging and reconnecting the USB relay
+  - Run the test script to verify the relay works: `python3 code/usb_relay_control.py`
+  - Try a different USB port
+  - If using a USB hub, try connecting directly to the Raspberry Pi
+  - Install the CH340 driver manually if needed:
+    ```bash
+    sudo apt update
+    sudo apt install -y kmod
+    sudo modprobe ch341
+    sudo modprobe usbserial
+    ```
 
 - **No Audio Output**
   - Check that your speakers are properly connected and powered on

@@ -121,15 +121,33 @@ try:
     import RPi.GPIO as GPIO
     GPIO.setwarnings(False)  # Disable warnings
     
-    # Initialize components
+    # Initialize output device (GPIO or USB relay)
+    from combined_output_control import CombinedOutputControl
+    
+    # You can specify the output type or let it auto-detect
+    # output = CombinedOutputControl(output_type="gpio", pin_number=OUTPUT_PIN)  # Force GPIO
+    # output = CombinedOutputControl(output_type="usb_relay")  # Force USB relay
+    output = CombinedOutputControl(pin_number=OUTPUT_PIN)  # Auto-detect
+    
+    output_type = output.get_output_type()
+    if output_type == "gpio":
+        print(f"1. Output device initialized using GPIO on pin {OUTPUT_PIN}")
+    else:
+        print(f"1. Output device initialized using USB relay")
+        
+    # Initialize button trigger
+    from motion_sensor import ButtonTrigger
     button = ButtonTrigger(BUTTON_PIN, callback=button_pressed, pull_up=USE_PULLUP)
-    output = OutputDevice(OUTPUT_PIN)
+    print(f"2. Button trigger initialized on pin {BUTTON_PIN}")
+    
+    # Initialize audio output
+    from audio_output import AudioOutput
     audio = AudioOutput(AUDIO_DIR)
+    print(f"3. Audio output initialized with directory: {AUDIO_DIR}")
     
     print("All Halloween scare components initialized successfully")
 except Exception as e:
     print(f"Error initializing components: {e}")
-    import sys
     sys.exit(1)
 
 # Test components on startup
@@ -297,10 +315,17 @@ except KeyboardInterrupt:
 finally:
     # Clean up
     try:
+        print("\nCleaning up resources...")
         output.turn_off()
-        output.cleanup()
+        output.cleanup()  # This will handle both GPIO and USB relay cleanup
         audio.stop_audio()
-        GPIO.cleanup()  # Clean up all GPIO resources
+        
+        # Additional GPIO cleanup just to be safe
+        try:
+            GPIO.cleanup()  # Clean up any remaining GPIO resources
+        except:
+            pass  # Ignore errors if GPIO was already cleaned up
+            
         print("Halloween scare system shutdown complete - all resources cleaned up")
     except Exception as e:
         print(f"Error during cleanup: {e}")
