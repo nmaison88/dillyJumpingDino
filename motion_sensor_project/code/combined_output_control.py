@@ -6,7 +6,8 @@ Provides a unified interface for controlling outputs via GPIO or USB relay
 import os
 import time
 import logging
-from output_control import OutputControl
+import sys  # Add sys import for error handling
+from output_control import OutputDevice  # Fix: Use OutputDevice instead of OutputControl
 from usb_relay_control import USBRelay
 
 # Set up logging
@@ -46,7 +47,7 @@ class CombinedOutputControl:
         # Initialize the appropriate controller
         if self.output_type == self.GPIO:
             try:
-                self.gpio_controller = OutputControl(pin_number, active_high)
+                self.gpio_controller = OutputDevice(pin_number, active_high)
                 logger.info(f"Using GPIO output on pin {pin_number}")
             except Exception as e:
                 logger.error(f"Failed to initialize GPIO output: {e}")

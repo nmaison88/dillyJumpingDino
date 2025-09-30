@@ -19,7 +19,39 @@ fi
 SCRIPT_PATH="$0"
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+echo "Script path: $SCRIPT_PATH"
+echo "Script directory: $SCRIPT_DIR"
 echo "Project directory: $PROJECT_DIR"
+
+# Check if we're in the right directory structure
+if [ ! -d "$PROJECT_DIR/code" ]; then
+  echo "Warning: Could not find code directory at $PROJECT_DIR/code"
+  echo "Trying to find the correct project directory..."
+  
+  # Try to find the project directory by looking for common files
+  if [ -d "/home/pi/motion_sensor_project" ]; then
+    PROJECT_DIR="/home/pi/motion_sensor_project"
+    echo "Found project at: $PROJECT_DIR"
+  elif [ -d "/home/admin/motion_sensor_project" ]; then
+    PROJECT_DIR="/home/admin/motion_sensor_project"
+    echo "Found project at: $PROJECT_DIR"
+  else
+    echo "Please enter the full path to the motion_sensor_project directory:"
+    read -r USER_PROJECT_DIR
+    if [ -d "$USER_PROJECT_DIR" ]; then
+      PROJECT_DIR="$USER_PROJECT_DIR"
+      echo "Using user-provided path: $PROJECT_DIR"
+    fi
+  fi
+fi
+
+# Final check
+if [ ! -d "$PROJECT_DIR/code" ]; then
+  echo "Error: Could not find the project's code directory."
+  echo "This script must be run from within the motion_sensor_project directory."
+  echo "Current detected project directory: $PROJECT_DIR"
+  echo "Please make sure you are running this script from the correct location."
+fi
 
 # Function to check if a package is installed
 check_package() {
@@ -65,10 +97,29 @@ fi
 # Fix permissions
 echo "
 Fixing permissions..."
-chmod +x "$PROJECT_DIR/code/main.py"
-chmod +x "$PROJECT_DIR/code/gui_interface.py"
-chmod +x "$PROJECT_DIR/code/kiosk_mode.py"
-echo "Permissions fixed"
+# Check if files exist before trying to chmod them
+if [ -f "$PROJECT_DIR/code/main.py" ]; then
+  chmod +x "$PROJECT_DIR/code/main.py"
+  echo "Made main.py executable"
+else
+  echo "Warning: $PROJECT_DIR/code/main.py not found"
+fi
+
+if [ -f "$PROJECT_DIR/code/gui_interface.py" ]; then
+  chmod +x "$PROJECT_DIR/code/gui_interface.py"
+  echo "Made gui_interface.py executable"
+else
+  echo "Warning: $PROJECT_DIR/code/gui_interface.py not found"
+fi
+
+if [ -f "$PROJECT_DIR/code/kiosk_mode.py" ]; then
+  chmod +x "$PROJECT_DIR/code/kiosk_mode.py"
+  echo "Made kiosk_mode.py executable"
+else
+  echo "Warning: $PROJECT_DIR/code/kiosk_mode.py not found"
+fi
+
+echo "Permissions check complete"
 
 # Create systemd service
 echo "
