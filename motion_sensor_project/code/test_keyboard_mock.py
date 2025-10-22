@@ -1,147 +1,13 @@
+#!/usr/bin/env python3
 """
-Input Module for Raspberry Pi 5
-This module handles button press and keyboard input detection for triggering Halloween scares.
+Test script for keyboard input methods with mocked GPIO
 """
-import RPi.GPIO as GPIO
+import sys
 import time
 import threading
-import sys
 import termios
 import tty
 import select
-
-class ButtonTrigger:
-    def __init__(self, pin_number=17, callback=None, pull_up=True):
-        """
-        Initialize the button trigger.
-        
-        Args:
-            pin_number: GPIO pin number connected to the button (BCM numbering)
-            callback: Function to call when button is pressed
-            pull_up: Whether to use internal pull-up resistor (True) or external pull-down (False)
-        """
-        # Use BCM pin numbering
-        GPIO.setmode(GPIO.BCM)
-        
-        self.pin_number = pin_number
-        self.callback = callback
-        self.last_press_time = 0
-        self.debounce_time = 0.3  # 300ms debounce to avoid button bounce
-        self.pull_up = pull_up
-        
-        # Set up the GPIO pin as input with pull-up or pull-down
-        if pull_up:
-            # When using pull-up, button should connect pin to ground when pressed
-            # Button press will read as LOW (0)
-            GPIO.setup(self.pin_number, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        else:
-            # When using pull-down, button should connect pin to 3.3V when pressed
-            # Button press will read as HIGH (1)
-            GPIO.setup(self.pin_number, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-        
-    def is_button_pressed(self):
-        """
-        Check if button is currently pressed.
-        Returns True if button is pressed, False otherwise.
-        """
-        if self.pull_up:
-            # When using pull-up, button press reads as LOW (0)
-            return GPIO.input(self.pin_number) == 0
-        else:
-            # When using pull-down, button press reads as HIGH (1)
-            return GPIO.input(self.pin_number) == 1
-    
-    def monitor(self, polling_interval=0.05):
-        """
-        Continuously monitor for button presses.
-        
-        Args:
-            polling_interval: Time in seconds between checks
-        """
-        try:
-            print("Monitoring for button presses...")
-            while True:
-                if self.is_button_pressed():
-                    current_time = time.time()
-                    if current_time - self.last_press_time > self.debounce_time:
-                        print("Button pressed! Triggering scare...")
-                        self.last_press_time = current_time
-                        if self.callback:
-                            self.callback()
-                    # Wait until button is released to avoid multiple triggers
-                    while self.is_button_pressed():
-                        time.sleep(0.01)
-                time.sleep(polling_interval)
-        except KeyboardInterrupt:
-            print("Button monitoring stopped.")
-        finally:
-            self.cleanup()
-    
-    def setup_interrupt(self):
-        """
-        Set up an interrupt to detect button presses.
-        This is more efficient than polling.
-        If interrupt setup fails, falls back to polling mode.
-        """
-        def handle_interrupt(channel):
-            current_time = time.time()
-            if current_time - self.last_press_time > self.debounce_time:
-                self.last_press_time = current_time
-                print("Button pressed! Triggering scare... (Interrupt)")
-                if self.callback:
-                    self.callback()
-        
-        try:
-            # Remove any existing event detection on this pin
-            try:
-                GPIO.remove_event_detect(self.pin_number)
-            except:
-                pass  # It's okay if there was no event detection to remove
-            
-            # Set up event detection based on pull-up/down configuration
-            if self.pull_up:
-                # When using pull-up, detect falling edge (button press pulls to ground)
-                GPIO.add_event_detect(self.pin_number, GPIO.FALLING, callback=handle_interrupt, bouncetime=int(self.debounce_time * 1000))
-            else:
-                # When using pull-down, detect rising edge (button press pulls to 3.3V)
-                GPIO.add_event_detect(self.pin_number, GPIO.RISING, callback=handle_interrupt, bouncetime=int(self.debounce_time * 1000))
-                
-            print(f"Button interrupt set up on pin {self.pin_number}")
-            return True
-            
-        except RuntimeError as e:
-            print(f"Warning: Could not set up interrupt: {e}")
-            print("Falling back to polling mode for button detection.")
-            
-            # Start polling in a separate thread
-            import threading
-            self.polling_thread = threading.Thread(target=self._polling_loop)
-            self.polling_thread.daemon = True  # Thread will exit when main program exits
-            self.polling_thread.start()
-            return False
-    
-    def _polling_loop(self):
-        """
-        Internal polling loop used as fallback if interrupts fail.
-        """
-        print("Starting button polling loop...")
-        try:
-            while True:
-                if self.is_button_pressed():
-                    current_time = time.time()
-                    if current_time - self.last_press_time > self.debounce_time:
-                        print("Button pressed! Triggering scare... (Polling)")
-                        self.last_press_time = current_time
-                        if self.callback:
-                            self.callback()
-                    # Wait until button is released to avoid multiple triggers
-                    while self.is_button_pressed():
-                        time.sleep(0.01)
-                time.sleep(0.05)  # Check every 50ms
-        except Exception as e:
-            print(f"Polling loop error: {e}")
-            # Continue running even if there's an error
-
 
 class KeyboardTrigger:
     def __init__(self, key='w', callback=None):
@@ -315,36 +181,185 @@ class KeyboardTrigger:
         # Reset state variables
         self.initialized = False
 
+class SimpleKeyboardInput:
+    def __init__(self, key='w', callback=None):
+        """
+        Initialize the keyboard input handler.
+        
+        Args:
+            key: Key to trigger the action (default is 'w')
+            callback: Function to call when key is pressed
+        """
+        self.key = key
+        self.callback = callback
+        self.running = False
+        self.thread = None
+        self.last_press_time = 0
+        self.debounce_time = 0.3  # 300ms debounce
+    
+    def _input_loop(self):
+        """
+        Internal method to monitor for keyboard input in a separate thread.
+        Uses standard input() which works in more environments but requires Enter key.
+        """
+        print(f"\nSimple keyboard input is now active!")
+        print(f"Type '{self.key}' and press Enter to trigger the action.")
+        print("Type 'exit' to quit.\n")
+        
+        while self.running:
+            try:
+                user_input = input(f"Press '{self.key}' and Enter to trigger (or 'exit'): ")
+                
+                # Check for exit command
+                if user_input.lower() == 'exit':
+                    print("Keyboard input stopped.")
+                    self.running = False
+                    break
+                
+                # Check for trigger key
+                if self.key.lower() in user_input.lower():
+                    current_time = time.time()
+                    if current_time - self.last_press_time > self.debounce_time:
+                        print(f"Key '{self.key}' detected! Triggering action...")
+                        self.last_press_time = current_time
+                        if self.callback:
+                            try:
+                                self.callback()
+                            except Exception as e:
+                                print(f"Error in key callback: {e}")
+            except KeyboardInterrupt:
+                print("\nKeyboard input stopped (Ctrl+C).")
+                self.running = False
+                break
+            except Exception as e:
+                print(f"Error reading input: {e}")
+                time.sleep(1)  # Avoid tight loop if there's an error
+    
+    def start(self):
+        """
+        Start monitoring for keyboard input in a separate thread.
+        """
+        if self.thread is not None and self.thread.is_alive():
+            print("Keyboard input is already running.")
+            return
+        
+        self.running = True
+        self.thread = threading.Thread(target=self._input_loop)
+        self.thread.daemon = True
+        self.thread.start()
+        return self.thread
+    
+    def stop(self):
+        """
+        Stop monitoring for keyboard input.
+        """
+        self.running = False
+        if self.thread and self.thread.is_alive():
+            print("Waiting for keyboard input thread to exit...")
+            self.thread.join(timeout=2.0)
+            if self.thread.is_alive():
+                print("Warning: Keyboard input thread did not exit cleanly.")
+            else:
+                print("Keyboard input stopped successfully.")
 
-# Example usage
-if __name__ == "__main__":
-    def on_input_trigger():
-        print("Halloween scare triggered!")
+def test_callback():
+    print('\n*** KEY PRESSED! CALLBACK TRIGGERED! ***\n')
+
+def main():
+    print("Keyboard Input Test Script")
+    print("==========================")
+    
+    # Ask which method to test
+    print("\nWhich keyboard input method would you like to test?")
+    print("1. Advanced (raw terminal mode, no Enter key needed)")
+    print("2. Simple (requires Enter key)")
+    print("3. Both methods (try advanced first, fall back to simple)")
+    
+    choice = input("Enter your choice (1, 2, or 3): ").strip()
+    
+    if choice == '1':
+        test_advanced()
+    elif choice == '2':
+        test_simple()
+    elif choice == '3':
+        test_both()
+    else:
+        print("Invalid choice. Please run the script again.")
+        sys.exit(1)
+
+def test_advanced():
+    """Test the advanced KeyboardTrigger"""
+    print("\nTesting Advanced KeyboardTrigger")
+    print("===============================")
+    
+    # Create keyboard trigger for 'w' key
+    kt = KeyboardTrigger('w', test_callback)
+    
+    # Start monitoring
+    success = kt.start_monitoring()
+    
+    if not success:
+        print("\nAdvanced keyboard trigger failed to initialize.")
+        print("This might be because:")
+        print("1. You're not running in an interactive terminal")
+        print("2. The terminal doesn't support raw mode")
+        print("3. There's another issue with terminal access")
+        return False
+    
+    print("\nPress 'w' key to trigger the action (no Enter needed)")
+    print("Press Ctrl+C to exit")
     
     try:
-        # Create a button trigger on pin 17 (BCM numbering) with pull-up resistor
-        button = ButtonTrigger(17, callback=on_input_trigger, pull_up=True)
-        
-        # Method 1: Use polling
-        # button.monitor()
-        
-        # Method 2: Use interrupts (more efficient)
-        button.setup_interrupt()
-        
-        # Create a keyboard trigger for the 'w' key
-        keyboard = KeyboardTrigger('w', callback=on_input_trigger)
-        keyboard.start_monitoring()
-        
-        # Keep the program running
-        print("Waiting for button press or 'w' key to trigger Halloween scare...")
-        print("Press Ctrl+C to exit")
         while True:
             time.sleep(1)
-            
     except KeyboardInterrupt:
-        print("Program terminated by user")
-        
+        print("\nTest terminated by user")
     finally:
-        # Clean up resources
-        GPIO.cleanup()
-        print("GPIO cleanup complete")
+        kt.stop_monitoring()
+        kt.cleanup()
+        
+    return True
+
+def test_simple():
+    """Test the simple keyboard input"""
+    print("\nTesting Simple Keyboard Input")
+    print("===========================")
+    
+    # Create simple keyboard input for 'w' key
+    ski = SimpleKeyboardInput('w', test_callback)
+    
+    # Start monitoring
+    ski.start()
+    
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nTest terminated by user")
+    finally:
+        ski.stop()
+        
+    return True
+
+def test_both():
+    """Test both methods with fallback"""
+    advanced_success = test_advanced()
+    
+    if not advanced_success:
+        print("\nAdvanced keyboard input failed. Trying simple keyboard input...")
+        time.sleep(1)
+        test_simple()
+
+if __name__ == "__main__":
+    # Check if we're running in a proper terminal
+    if not sys.stdin.isatty():
+        print("ERROR: This script must be run in an interactive terminal.")
+        print("It cannot be run from a non-terminal environment.")
+        sys.exit(1)
+        
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nTest terminated by user")
+    except Exception as e:
+        print(f"\nUnexpected error: {e}")

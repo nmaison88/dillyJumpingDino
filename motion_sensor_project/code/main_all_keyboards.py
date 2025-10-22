@@ -1,12 +1,17 @@
+#!/usr/bin/env python3
 """
-Main Program for Button-Activated Halloween Scare with Raspberry Pi 5
-This program integrates button detection, keyboard input, output control, and audio output for Halloween scares.
+Main Program for Halloween Scare with Complete Keyboard Support
+This version supports all types of keyboard input:
+1. Physical keyboards plugged into the Pi
+2. Pico Pi programmed as a keyboard
+3. SSH terminal keyboard input
 """
-from motion_sensor import ButtonTrigger, KeyboardTrigger
+from motion_sensor import ButtonTrigger
 from output_control import OutputDevice
 from audio_output import AudioOutput
 import time
 import sys
+import os
 
 # Import all keyboard input handlers
 keyboard_handlers = []
@@ -25,7 +30,14 @@ try:
 except ImportError:
     DIRECT_KEYBOARD_AVAILABLE = False
 
-# 3. Try simple keyboard input
+# 3. Try advanced keyboard trigger
+try:
+    from motion_sensor import KeyboardTrigger
+    KEYBOARD_TRIGGER_AVAILABLE = True
+except ImportError:
+    KEYBOARD_TRIGGER_AVAILABLE = False
+
+# 4. Try simple keyboard input
 try:
     from keyboard_input import SimpleKeyboardInput
     SIMPLE_KEYBOARD_AVAILABLE = True
@@ -38,7 +50,6 @@ OUTPUT_PIN = 18      # LED/Relay pin (BCM numbering)
 KEYBOARD_KEY = 'w'   # Keyboard key to trigger the scare
 
 # Use audio files from the project directory
-import os
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AUDIO_DIR = os.path.join(PROJECT_DIR, "audio_files")  # Audio files in project directory
 
@@ -47,7 +58,7 @@ USE_PULLUP = True    # Set to True if using internal pull-up resistor
 # Define the response to button press
 def button_pressed():
     """Function called when button is pressed to trigger Halloween scare"""
-    print("Button pressed! Activating Halloween scare...")
+    print("Button/Key pressed! Activating Halloween scare...")
     
     # Turn on output device (LED or relay) first
     output.turn_on()  # Turn on immediately
@@ -77,7 +88,7 @@ def button_pressed():
                 success = audio.play_audio_file(audio_path)
                 
                 if success:
-                        # For WAV files, we'll use a blocking approach
+                    # For WAV files, we'll use a blocking approach
                     if random_file.lower().endswith('.wav'):
                         # For WAV files, play_audio_file is already blocking, so we don't need to wait
                         # The function will return when playback is complete
@@ -162,7 +173,6 @@ try:
         print(f"1. Output device initialized using USB relay")
         
     # Initialize button trigger
-    from motion_sensor import ButtonTrigger, KeyboardTrigger
     button = ButtonTrigger(BUTTON_PIN, callback=button_pressed, pull_up=USE_PULLUP)
     print(f"2. Button trigger initialized on pin {BUTTON_PIN}")
     
@@ -184,9 +194,11 @@ try:
         print(f"3b. Direct keyboard input initialized for key '{KEYBOARD_KEY}'")
     
     # 3. Try advanced keyboard trigger (for SSH terminal)
-    advanced_keyboard = KeyboardTrigger(KEYBOARD_KEY, callback=button_pressed)
-    keyboard_handlers.append(("Advanced Keyboard", advanced_keyboard))
-    print(f"3c. Advanced keyboard trigger initialized for key '{KEYBOARD_KEY}'")
+    advanced_keyboard = None
+    if KEYBOARD_TRIGGER_AVAILABLE:
+        advanced_keyboard = KeyboardTrigger(KEYBOARD_KEY, callback=button_pressed)
+        keyboard_handlers.append(("Advanced Keyboard", advanced_keyboard))
+        print(f"3c. Advanced keyboard trigger initialized for key '{KEYBOARD_KEY}'")
     
     # 4. Try simple keyboard input (fallback)
     simple_keyboard = None
@@ -213,96 +225,6 @@ output.blink(2, 0.2, 0.2)
 print("2. Testing audio output...")
 audio.play_tone(440, 0.5)  # Play A4 note
 
-# Check audio system and files
-print("3. Checking audio system...")
-audio.check_audio_system()
-
-# Test audio playback if files exist
-audio_files = audio.list_audio_files()
-if audio_files:
-    print("\nWould you like to test audio playback with synchronized output? (y/n)")
-    print("(This will play a short clip from one of your audio files and activate the output)")
-    print("Press Enter to skip the test...")
-    
-    # Note: In a real deployment, you'd use input() here, but for this code example
-    # we'll just simulate a 'yes' response
-    test_audio = True
-    
-    if test_audio:
-        import random
-        import os
-        # Choose a random audio file
-        test_file = random.choice(audio_files)
-        test_path = os.path.join(audio.audio_dir, test_file)
-        print(f"\nTesting synchronized output with audio: {test_file}")
-        
-        # Turn on the output device
-        print("Activating output device...")
-        output.turn_on()
-        
-        try:
-            # Play just the first few seconds for testing
-            print("Playing short audio clip for testing...")
-            
-            # For WAV files, we'll use a simpler approach
-            if test_file.lower().endswith('.wav'):
-                import subprocess
-                try:
-                    # Use sox to play just the first 3 seconds if available
-                    try:
-                        # Check if sox is installed
-                        subprocess.run(["which", "sox"], check=True, capture_output=True)
-                        # Use sox to trim the audio
-                        print("Using sox to play trimmed WAV file...")
-                        subprocess.run(["play", "-q", test_path, "trim", "0", "3"], check=False)
-                    except:
-                        # Fall back to aplay if sox is not available
-                        print("Sox not available, using aplay...")
-                        # Just play the file and manually stop after 3 seconds
-                        proc = subprocess.Popen(["aplay", "-q", test_path])
-                        import time
-                        time.sleep(3)  # Play for 3 seconds
-                        proc.terminate()  # Then stop
-                        time.sleep(0.1)  # Give it time to clean up
-                        if proc.poll() is None:
-                            proc.kill()  # Force kill if still running
-                    print("Audio test complete")
-                except Exception as e:
-                    print(f"Error during WAV audio test: {e}")
-            # For MP3 files
-            elif test_file.lower().endswith('.mp3'):
-                import subprocess
-                print("Playing short MP3 clip for testing...")
-                try:
-                    # Play for 3 seconds
-                    subprocess.run(["mpg123", "-q", "--skip", "0", "--end", "3", test_path], check=False)
-                    print("Audio test complete")
-                except Exception as e:
-                    print(f"Error during MP3 audio test: {e}")
-            # For other formats
-            else:
-                print("Playing generic audio format...")
-                try:
-                    # Just play and stop after 3 seconds
-                    audio.play_audio_file(test_path)
-                    import time
-                    time.sleep(3)
-                    audio.stop_audio()
-                    print("Audio test complete")
-                except Exception as e:
-                    print(f"Error during audio test: {e}")
-        finally:
-            # Always turn off the output when done
-            print("Deactivating output device...")
-            output.turn_off()
-            
-        print("Synchronized output and audio test complete")
-    else:
-        print("Skipping audio test")
-else:
-    print("\nNo audio files found for testing.")
-    print(f"You can add .wav, .mp3, or .ogg files to: {audio.audio_dir}")
-
 # Setup button detection
 print("\nSetting up button trigger...")
 interrupt_success = button.setup_interrupt()
@@ -312,7 +234,6 @@ if not interrupt_success:
 
 # Setup all keyboard handlers
 print("\nSetting up keyboard handlers...")
-active_keyboard_handlers = []
 
 # Start Pico keyboard input (highest priority)
 if pico_keyboard:
@@ -329,14 +250,15 @@ if direct_keyboard:
     print(f"Direct keyboard input started for key '{KEYBOARD_KEY}'")
 
 # Start advanced keyboard trigger (for SSH terminal)
-print("Starting advanced keyboard trigger for SSH terminal...")
-keyboard_success = advanced_keyboard.start_monitoring()
-if keyboard_success:
-    active_keyboard_handlers.append(("Advanced Keyboard", advanced_keyboard))
-    print(f"Advanced keyboard monitoring started for key '{KEYBOARD_KEY}'")
+if advanced_keyboard:
+    print("Starting advanced keyboard trigger for SSH terminal...")
+    keyboard_success = advanced_keyboard.start_monitoring()
+    if keyboard_success:
+        active_keyboard_handlers.append(("Advanced Keyboard", advanced_keyboard))
+        print(f"Advanced keyboard monitoring started for key '{KEYBOARD_KEY}'")
 
 # If advanced keyboard monitoring fails, try the simple method
-if not keyboard_success and simple_keyboard is not None:
+if advanced_keyboard and not keyboard_success and simple_keyboard:
     print("Advanced keyboard monitoring failed. Falling back to simple keyboard input...")
     simple_keyboard.start()
     active_keyboard_handlers.append(("Simple Keyboard", simple_keyboard))
@@ -349,7 +271,6 @@ else:
     print(f"Successfully started {len(active_keyboard_handlers)} keyboard input methods:")
     for name, _ in active_keyboard_handlers:
         print(f"- {name}")
-
 
 # Initialize GUI if enabled
 USE_GUI = True  # Set to False to disable GUI
@@ -402,6 +323,7 @@ print("2. Pico Pi programmed as a keyboard")
 print("3. Physical keyboard 'w' key press")
 print("4. SSH terminal keyboard input")
 print("5. GUI button click (if GUI is enabled)")
+
 try:
     # Blink LED to indicate system is ready
     output.blink(3, 0.1, 0.1)

@@ -1,0 +1,17 @@
+[Unit]
+Description=Halloween Scare System
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/admin/motion_sensor_project
+ExecStart=/usr/bin/python3 /home/admin/motion_sensor_project/code/main_all_keyboards.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=halloween-scare
+
+[Install]
+WantedBy=multi-user.target

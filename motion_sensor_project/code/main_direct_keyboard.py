@@ -1,31 +1,29 @@
+#!/usr/bin/env python3
 """
-Main Program for Button-Activated Halloween Scare with Raspberry Pi 5
-This program integrates button detection, keyboard input, output control, and audio output for Halloween scares.
+Main Program for Halloween Scare with Direct Keyboard Input Support
+This version adds support for physical keyboards plugged directly into the Raspberry Pi.
 """
-from motion_sensor import ButtonTrigger, KeyboardTrigger
+from motion_sensor import ButtonTrigger
 from output_control import OutputDevice
 from audio_output import AudioOutput
 import time
 import sys
+import os
 
-# Import all keyboard input handlers
-keyboard_handlers = []
-
-# 1. Try Pico keyboard input
-try:
-    from pico_keyboard_input import PicoKeyboardInput
-    PICO_KEYBOARD_AVAILABLE = True
-except ImportError:
-    PICO_KEYBOARD_AVAILABLE = False
-
-# 2. Try direct keyboard input
+# Import the direct keyboard input handler
 try:
     from direct_keyboard_input import DirectKeyboardInput
     DIRECT_KEYBOARD_AVAILABLE = True
 except ImportError:
     DIRECT_KEYBOARD_AVAILABLE = False
 
-# 3. Try simple keyboard input
+# Also import the original keyboard handlers as fallbacks
+try:
+    from motion_sensor import KeyboardTrigger
+    KEYBOARD_TRIGGER_AVAILABLE = True
+except ImportError:
+    KEYBOARD_TRIGGER_AVAILABLE = False
+
 try:
     from keyboard_input import SimpleKeyboardInput
     SIMPLE_KEYBOARD_AVAILABLE = True
@@ -38,7 +36,6 @@ OUTPUT_PIN = 18      # LED/Relay pin (BCM numbering)
 KEYBOARD_KEY = 'w'   # Keyboard key to trigger the scare
 
 # Use audio files from the project directory
-import os
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AUDIO_DIR = os.path.join(PROJECT_DIR, "audio_files")  # Audio files in project directory
 
@@ -47,7 +44,7 @@ USE_PULLUP = True    # Set to True if using internal pull-up resistor
 # Define the response to button press
 def button_pressed():
     """Function called when button is pressed to trigger Halloween scare"""
-    print("Button pressed! Activating Halloween scare...")
+    print("Button/Key pressed! Activating Halloween scare...")
     
     # Turn on output device (LED or relay) first
     output.turn_on()  # Turn on immediately
@@ -77,7 +74,7 @@ def button_pressed():
                 success = audio.play_audio_file(audio_path)
                 
                 if success:
-                        # For WAV files, we'll use a blocking approach
+                    # For WAV files, we'll use a blocking approach
                     if random_file.lower().endswith('.wav'):
                         # For WAV files, play_audio_file is already blocking, so we don't need to wait
                         # The function will return when playback is complete
@@ -162,38 +159,32 @@ try:
         print(f"1. Output device initialized using USB relay")
         
     # Initialize button trigger
-    from motion_sensor import ButtonTrigger, KeyboardTrigger
     button = ButtonTrigger(BUTTON_PIN, callback=button_pressed, pull_up=USE_PULLUP)
     print(f"2. Button trigger initialized on pin {BUTTON_PIN}")
     
-    # Initialize all available keyboard handlers
-    active_keyboard_handlers = []
+    # Initialize keyboard triggers - try all available methods
+    keyboard_handlers = []
     
-    # 1. Try Pico keyboard input (highest priority)
-    pico_keyboard = None
-    if PICO_KEYBOARD_AVAILABLE:
-        pico_keyboard = PicoKeyboardInput(KEYBOARD_KEY, callback=button_pressed)
-        keyboard_handlers.append(("Pico Keyboard", pico_keyboard))
-        print(f"3a. Pico keyboard input initialized for key '{KEYBOARD_KEY}'")
-    
-    # 2. Try direct keyboard input (for physical keyboard)
+    # 1. Try direct keyboard input (for physical keyboard)
     direct_keyboard = None
     if DIRECT_KEYBOARD_AVAILABLE:
         direct_keyboard = DirectKeyboardInput(KEYBOARD_KEY, callback=button_pressed)
-        keyboard_handlers.append(("Direct Keyboard", direct_keyboard))
-        print(f"3b. Direct keyboard input initialized for key '{KEYBOARD_KEY}'")
+        keyboard_handlers.append(("Direct Keyboard Input", direct_keyboard))
+        print(f"3a. Direct keyboard input initialized for key '{KEYBOARD_KEY}'")
     
-    # 3. Try advanced keyboard trigger (for SSH terminal)
-    advanced_keyboard = KeyboardTrigger(KEYBOARD_KEY, callback=button_pressed)
-    keyboard_handlers.append(("Advanced Keyboard", advanced_keyboard))
-    print(f"3c. Advanced keyboard trigger initialized for key '{KEYBOARD_KEY}'")
+    # 2. Try advanced keyboard trigger (for SSH terminal)
+    advanced_keyboard = None
+    if KEYBOARD_TRIGGER_AVAILABLE:
+        advanced_keyboard = KeyboardTrigger(KEYBOARD_KEY, callback=button_pressed)
+        keyboard_handlers.append(("Advanced Keyboard Trigger", advanced_keyboard))
+        print(f"3b. Advanced keyboard trigger initialized for key '{KEYBOARD_KEY}'")
     
-    # 4. Try simple keyboard input (fallback)
+    # 3. Also initialize the simple keyboard input as a fallback
     simple_keyboard = None
     if SIMPLE_KEYBOARD_AVAILABLE:
         simple_keyboard = SimpleKeyboardInput(KEYBOARD_KEY, callback=button_pressed)
-        keyboard_handlers.append(("Simple Keyboard", simple_keyboard))
-        print(f"3d. Simple keyboard input initialized as fallback")
+        keyboard_handlers.append(("Simple Keyboard Input", simple_keyboard))
+        print(f"3c. Simple keyboard input initialized as fallback")
     
     # Initialize audio output
     from audio_output import AudioOutput
@@ -310,16 +301,9 @@ if not interrupt_success:
     print("Note: Using polling mode instead of interrupts. This will still work fine.")
     print("The button will be checked continuously in the background.")
 
-# Setup all keyboard handlers
-print("\nSetting up keyboard handlers...")
+# Setup keyboard detection - start all available handlers
+print("\nSetting up keyboard triggers...")
 active_keyboard_handlers = []
-
-# Start Pico keyboard input (highest priority)
-if pico_keyboard:
-    print("Starting Pico keyboard input...")
-    pico_keyboard.start()
-    active_keyboard_handlers.append(("Pico Keyboard", pico_keyboard))
-    print(f"Pico keyboard input started for key '{KEYBOARD_KEY}'")
 
 # Start direct keyboard input (for physical keyboard)
 if direct_keyboard:
@@ -329,14 +313,15 @@ if direct_keyboard:
     print(f"Direct keyboard input started for key '{KEYBOARD_KEY}'")
 
 # Start advanced keyboard trigger (for SSH terminal)
-print("Starting advanced keyboard trigger for SSH terminal...")
-keyboard_success = advanced_keyboard.start_monitoring()
-if keyboard_success:
-    active_keyboard_handlers.append(("Advanced Keyboard", advanced_keyboard))
-    print(f"Advanced keyboard monitoring started for key '{KEYBOARD_KEY}'")
+if advanced_keyboard:
+    print("Starting advanced keyboard trigger for SSH terminal...")
+    keyboard_success = advanced_keyboard.start_monitoring()
+    if keyboard_success:
+        active_keyboard_handlers.append(("Advanced Keyboard", advanced_keyboard))
+        print(f"Advanced keyboard monitoring started for key '{KEYBOARD_KEY}'")
 
 # If advanced keyboard monitoring fails, try the simple method
-if not keyboard_success and simple_keyboard is not None:
+if advanced_keyboard and not keyboard_success and simple_keyboard:
     print("Advanced keyboard monitoring failed. Falling back to simple keyboard input...")
     simple_keyboard.start()
     active_keyboard_handlers.append(("Simple Keyboard", simple_keyboard))
@@ -349,7 +334,6 @@ else:
     print(f"Successfully started {len(active_keyboard_handlers)} keyboard input methods:")
     for name, _ in active_keyboard_handlers:
         print(f"- {name}")
-
 
 # Initialize GUI if enabled
 USE_GUI = True  # Set to False to disable GUI
@@ -398,10 +382,10 @@ print("\nHalloween scare system ready!")
 print(f"Press the button or the '{KEYBOARD_KEY}' key to trigger...")
 print("The system will respond to:")
 print("1. Physical button press on GPIO pin")
-print("2. Pico Pi programmed as a keyboard")
-print("3. Physical keyboard 'w' key press")
-print("4. SSH terminal keyboard input")
-print("5. GUI button click (if GUI is enabled)")
+print("2. Physical keyboard 'w' key press (if available)")
+print("3. SSH terminal keyboard input")
+print("4. GUI button click (if GUI is enabled)")
+
 try:
     # Blink LED to indicate system is ready
     output.blink(3, 0.1, 0.1)
