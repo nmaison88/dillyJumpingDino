@@ -37,6 +37,14 @@ BUTTON_PIN = 17      # Button pin (BCM numbering)
 OUTPUT_PIN = 18      # LED/Relay pin (BCM numbering)
 KEYBOARD_KEY = 'w'   # Keyboard key to trigger the scare
 
+# Global flag to track if a scare is currently in progress
+SCARE_IN_PROGRESS = False
+
+# Output toggle configuration
+MIN_TOGGLE_DURATION = 0.5  # Minimum duration for output to stay on/off (in seconds)
+MAX_TOGGLE_DURATION = 1.0  # Maximum duration for output to stay on/off (in seconds)
+TOGGLE_PROBABILITY = 0.9   # Probability of toggling during longer audio playback
+
 # Use audio files from the project directory
 import os
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -44,9 +52,58 @@ AUDIO_DIR = os.path.join(PROJECT_DIR, "audio_files")  # Audio files in project d
 
 USE_PULLUP = True    # Set to True if using internal pull-up resistor
 
+# Helper function for toggling output during audio playback
+def _toggle_output_during_playback(duration):
+    """Toggle the output on and off randomly during audio playback"""
+    import random
+    import time
+    
+    # Always start with output on
+    output.turn_on()
+    print("Output activated for dynamic toggling")
+    
+    elapsed_time = 0
+    output_state = True  # True = on, False = off
+    
+    while elapsed_time < duration:
+        # Determine how long to stay in current state
+        toggle_duration = random.uniform(MIN_TOGGLE_DURATION, MAX_TOGGLE_DURATION)
+        
+        # Make sure we don't exceed the total duration
+        toggle_duration = min(toggle_duration, duration - elapsed_time)
+        
+        # Wait for the determined duration
+        time.sleep(toggle_duration)
+        elapsed_time += toggle_duration
+        
+        # Only toggle with certain probability (except for the last toggle, which should turn off)
+        if elapsed_time >= duration or random.random() < TOGGLE_PROBABILITY:
+            if output_state:
+                output.turn_off()
+                print("Output toggled OFF")
+            else:
+                output.turn_on()
+                print("Output toggled ON")
+            output_state = not output_state
+    
+    # Make sure output is off at the end
+    if output_state:
+        output.turn_off()
+        print("Output turned off at end of audio")
+
 # Define the response to button press
 def button_pressed():
     """Function called when button is pressed to trigger Halloween scare"""
+    global SCARE_IN_PROGRESS
+    
+    # Check if a scare is already in progress
+    if SCARE_IN_PROGRESS:
+        print("Scare already in progress. Ignoring trigger.")
+        return
+    
+    # Set the flag to indicate a scare is in progress
+    SCARE_IN_PROGRESS = True
+    
     print("Button pressed! Activating Halloween scare...")
     
     # Turn on output device (LED or relay) first
@@ -87,6 +144,7 @@ def button_pressed():
                         try:
                             # Try to get duration info using a subprocess
                             import subprocess
+                            import random
                             result = subprocess.run(["mpg123", "--skip", "0", "--test", audio_path], 
                                                   capture_output=True, text=True, check=False)
                             
@@ -98,44 +156,54 @@ def button_pressed():
                                 duration = int(mins) * 60 + int(secs)
                                 print(f"Audio duration: approximately {duration} seconds")
                                 
-                                # Wait for audio to finish (with a safety margin)
-                                time.sleep(min(duration + 1, 30))  # Cap at 30 seconds max
+                                # If duration is long enough, do random toggling
+                                if duration > 5:  # Only toggle for audio longer than 5 seconds
+                                    _toggle_output_during_playback(duration)
+                                else:
+                                    # For shorter audio, just wait
+                                    time.sleep(duration)
                             else:
                                 # Default wait time if we can't determine duration
-                                time.sleep(10)  # Wait 10 seconds for audio to play
+                                _toggle_output_during_playback(10)  # Toggle during 10 seconds
                         except Exception as e:
                             print(f"Error determining audio duration: {e}")
-                            time.sleep(10)  # Default wait time
+                            _toggle_output_during_playback(10)  # Toggle during 10 seconds
                     else:
-                        # For other formats, wait a default time
-                        time.sleep(10)  # Wait 10 seconds for audio to play
+                        # For other formats, wait a default time and toggle
+                        _toggle_output_during_playback(10)  # Toggle during 10 seconds
                 else:
                     print("Failed to play audio file, falling back to default sounds")
-                    # Fall back to default sounds
+                    # Fall back to default sounds with toggling
+                    output.turn_on()  # Make sure output is on at start
                     audio.play_alarm(1.0)
-                    time.sleep(2)  # Wait for alarm to finish
+                    _toggle_output_during_playback(2)  # Toggle during alarm
             else:
                 print("No valid audio files found, using default sounds")
+                output.turn_on()  # Make sure output is on at start
                 audio.play_alarm(1.0)
-                time.sleep(2)  # Wait for alarm to finish
+                _toggle_output_during_playback(2)  # Toggle during alarm
         else:
             # No audio files available, play default scary sounds
             print("No audio files found, playing default scary sounds")
             
-            # Play a spooky alarm sound
+            # Play a spooky alarm sound with output toggling
+            output.turn_on()  # Make sure output is on at start
             audio.play_alarm(1.0)
-            time.sleep(2)  # Wait for alarm to finish
+            _toggle_output_during_playback(2)  # Toggle during alarm
             
-            # Play an eerie melody
+            # Play an eerie melody with output toggling
             notes = [196, 147, 196, 220, 196, 147, 110]  # Spooky low notes
             durations = [0.3, 0.3, 0.3, 0.5, 0.3, 0.3, 0.8]
             audio.play_melody(notes, durations)
-            time.sleep(3)  # Wait for melody to finish
+            _toggle_output_during_playback(3)  # Toggle during melody
     
     finally:
         # Always turn off the output device when done, regardless of errors
         print("Turning off output device")
         output.turn_off()
+        
+        # Reset the flag to allow new scares
+        SCARE_IN_PROGRESS = False
         
     print("Halloween scare complete")
 
