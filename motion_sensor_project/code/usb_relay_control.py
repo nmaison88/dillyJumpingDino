@@ -8,9 +8,23 @@ import serial
 import serial.tools.list_ports
 import logging
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Set up custom logging with newlines
+class NewlineFormatter(logging.Formatter):
+    """Custom formatter that adds a newline before each message"""
+    def format(self, record):
+        record.msg = "\n" + str(record.msg)
+        return super().format(record)
+
+# Configure logger with custom formatter
 logger = logging.getLogger(__name__)
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = NewlineFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    # Remove the root logger handler to avoid duplicate messages
+    logger.propagate = False
 
 class USBRelay:
     """

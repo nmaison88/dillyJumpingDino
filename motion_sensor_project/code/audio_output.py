@@ -208,13 +208,14 @@ class AudioOutput:
             print(f"Error listing audio files: {e}")
             return []
     
-    def play_audio_file(self, filename, volume=1.0):
+    def play_audio_file(self, filename, volume=1.0, blocking=True):
         """
         Play an audio file.
         
         Args:
             filename: Path to the audio file
             volume: Volume level from 0.0 to 1.0 (default: 1.0 = maximum)
+            blocking: Whether to wait for playback to complete (default: True)
         """
         if not os.path.exists(filename):
             print(f"Audio file not found: {filename}")
@@ -237,16 +238,28 @@ class AudioOutput:
                 # Method 1: aplay with headphone device specification (card 1)
                 try:
                     # Use card 1 (Headphones) based on audio test results
-                    subprocess.run(["aplay", "-D", "plughw:1,0", "-q", filename], check=False)
-                    print("WAV playback complete using plughw:1,0 (headphone jack)")
+                    if blocking:
+                        # Blocking mode - wait for playback to complete
+                        subprocess.run(["aplay", "-D", "plughw:1,0", "-q", filename], check=False)
+                        print("WAV playback complete using plughw:1,0 (headphone jack)")
+                    else:
+                        # Non-blocking mode - start playback and return immediately
+                        self.current_process = subprocess.Popen(["aplay", "-D", "plughw:1,0", "-q", filename])
+                        print("WAV playback started in non-blocking mode using plughw:1,0 (headphone jack)")
                     return True
                 except Exception as e:
                     print(f"Method 1 failed: {e}, trying next method...")
                 
                 # Method 2: standard aplay
                 try:
-                    subprocess.run(["aplay", "-q", filename], check=False)
-                    print("WAV playback complete using standard aplay")
+                    if blocking:
+                        # Blocking mode - wait for playback to complete
+                        subprocess.run(["aplay", "-q", filename], check=False)
+                        print("WAV playback complete using standard aplay")
+                    else:
+                        # Non-blocking mode - start playback and return immediately
+                        self.current_process = subprocess.Popen(["aplay", "-q", filename])
+                        print("WAV playback started in non-blocking mode using standard aplay")
                     return True
                 except Exception as e:
                     print(f"Method 2 failed: {e}, trying next method...")
@@ -259,10 +272,14 @@ class AudioOutput:
                         
                         pygame.mixer.music.load(filename)
                         pygame.mixer.music.play()
-                        # Wait for playback to complete
-                        while pygame.mixer.music.get_busy():
-                            time.sleep(0.1)
-                        print("WAV playback complete using pygame")
+                        
+                        if blocking:
+                            # Wait for playback to complete
+                            while pygame.mixer.music.get_busy():
+                                time.sleep(0.1)
+                            print("WAV playback complete using pygame")
+                        else:
+                            print("WAV playback started in non-blocking mode using pygame")
                         return True
                     except Exception as e:
                         print(f"Method 3 failed: {e}")
@@ -428,13 +445,13 @@ class AudioOutput:
     
     def play_audio_async(self, filename, volume=1.0):
         """
-        Play audio file asynchronously (in a separate thread).
+        Play an audio file asynchronously (in a separate thread).
         
         Args:
             filename: Path to the audio file
             volume: Volume level from 0.0 to 1.0 (default: 1.0 = maximum)
         """
-        thread = threading.Thread(target=self.play_audio_file, args=(filename, volume))
+        thread = threading.Thread(target=self.play_audio_file, args=(filename, volume, True))
         thread.daemon = True  # Thread will exit when main program exits
         thread.start()
         return thread

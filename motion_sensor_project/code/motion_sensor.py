@@ -124,23 +124,86 @@ class ButtonTrigger:
         """
         Internal polling loop used as fallback if interrupts fail.
         """
-        print("Starting button polling loop...")
+        # Import all necessary modules locally to avoid any conflicts
+        import sys
+        import time as polling_time
+        import traceback
+        
+        print("Starting button polling loop with isolated imports...")
+        
+        # Function to safely sleep without crashing if time module fails
+        def safe_sleep(seconds):
+            try:
+                polling_time.sleep(seconds)
+            except Exception as sleep_error:
+                # If sleep fails, use a simple CPU-bound delay as fallback
+                print(f"Sleep error: {sleep_error}, using fallback delay")
+                start = polling_time.time() if 'polling_time' in locals() else 0
+                while (polling_time.time() if 'polling_time' in locals() else 1) - start < seconds:
+                    pass  # Simple busy-wait as fallback
+        
+        # Main polling loop with multiple layers of error handling
+        while True:  # Outermost loop - never exit
+            try:
+                while True:  # Main work loop
+                    try:
+                        # Check if button is pressed
+                        if self.is_button_pressed():
+                            try:
+                                # Get current time safely
+                                try:
+                                    current_time = polling_time.time()
+                                except Exception as time_error:
+                                    print(f"Time error: {time_error}, using fallback")
+                                    current_time = 0  # Fallback value
+                                    
+                                # Check debounce
+                                if current_time - self.last_press_time > self.debounce_time:
+                                    print("Button pressed! Triggering scare... (Polling)")
+                                    self.last_press_time = current_time
+                                    
+                                    # Call the callback if available
+                                    if self.callback:
+                                        try:
+                                            self.callback()
+                                        except Exception as callback_error:
+                                            print(f"Callback error: {callback_error}")
+                                            traceback.print_exc()
+                            except Exception as press_error:
+                                print(f"Button press handling error: {press_error}")
+                            
+                            # Wait until button is released
+                            try:
+                                while self.is_button_pressed():
+                                    safe_sleep(0.01)
+                            except Exception as release_error:
+                                print(f"Button release error: {release_error}")
+                                safe_sleep(0.1)  # Sleep a bit anyway
+                    except Exception as inner_error:
+                        print(f"Inner loop error: {inner_error}")
+                    
+                    # Sleep between checks
+                    safe_sleep(0.05)
+            except Exception as outer_error:
+                print(f"Outer loop error: {outer_error}")
+                print("Full traceback:")
+                traceback.print_exc()
+                safe_sleep(1)  # Avoid tight loop on persistent errors
+    
+    def cleanup(self):
+        """
+        Clean up GPIO resources.
+        """
         try:
-            while True:
-                if self.is_button_pressed():
-                    current_time = time.time()
-                    if current_time - self.last_press_time > self.debounce_time:
-                        print("Button pressed! Triggering scare... (Polling)")
-                        self.last_press_time = current_time
-                        if self.callback:
-                            self.callback()
-                    # Wait until button is released to avoid multiple triggers
-                    while self.is_button_pressed():
-                        time.sleep(0.01)
-                time.sleep(0.05)  # Check every 50ms
+            # Remove event detection if it exists
+            try:
+                GPIO.remove_event_detect(self.pin_number)
+            except:
+                pass  # It's okay if there was no event detection to remove
+            
+            print("Button resources cleaned up")
         except Exception as e:
-            print(f"Polling loop error: {e}")
-            # Continue running even if there's an error
+            print(f"Error during button cleanup: {e}")
 
 
 class KeyboardTrigger:

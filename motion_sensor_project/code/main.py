@@ -42,183 +42,280 @@ import os
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AUDIO_DIR = os.path.join(PROJECT_DIR, "audio_files")  # Audio files in project directory
 
-# Global flag to track if a scare is currently in progress
+# Global flags to track system state
 SCARE_IN_PROGRESS = False
+# We're using a simplified approach now with no audio state tracking
 
 # Idle sounds configuration
 IDLE_SOUNDS_DIR = os.path.join(PROJECT_DIR, "idle_sounds")  # Directory for idle sounds
-STANDBY_TIMEOUT = 240  # Time in seconds (4 minutes) before playing idle sound
+STANDBY_TIMEOUT = 120  # Time in seconds (4 minutes) before playing idle sound
+IDLE_REPEAT_INTERVAL = 120  # Time in seconds before playing another idle sound
 LAST_ACTIVITY_TIME = time.time()  # Track when the last activity occurred
+LAST_IDLE_SOUND_TIME = 0  # Track when the last idle sound was played
 IDLE_SOUND_PLAYED = False  # Track if idle sound has been played
 LAST_IDLE_SOUND = ""  # Track the last idle sound played to avoid repetition
 
 # Output toggle configuration
-MIN_TOGGLE_DURATION = 0.2  # Minimum duration for output to stay on/off (in seconds)
-MAX_TOGGLE_DURATION = 0.2  # Maximum duration for output to stay on/off (in seconds)
-TOGGLE_PROBABILITY = 0.98   # Probability of toggling during longer audio playback
+MIN_TOGGLE_DURATION = 0.1  # Minimum duration for output to stay on/off (in seconds)
+MAX_TOGGLE_DURATION = 0.3  # Maximum duration for output to stay on/off (in seconds)
+# No longer using probability - we'll toggle every time for more consistent behavior
 
-USE_PULLUP = True    # Set to True if using internal pull-up resistor
-
-# Helper function for toggling output during audio playback
-def _toggle_output_during_playback(duration):
-    """Toggle the output on and off randomly during audio playback"""
-    import random
+# Simple function to toggle output for a fixed number of times
+def _toggle_output_fixed_count(count, duration=0.2):
+    """Toggle the output on and off a fixed number of times
+    
+    Args:
+        count: Number of toggles to perform
+        duration: Duration in seconds for each toggle state (on or off)
+    """
     import time
+    
+    print(f"\n[TOGGLE] Starting output toggling for {count} toggles (duration: {duration:.1f}s)")
     
     # Always start with output on
     output.turn_on()
-    print("Output activated for dynamic toggling")
+    print("\n[TOGGLE] Output ON")
+    time.sleep(duration)
     
-    elapsed_time = 0
-    output_state = True  # True = on, False = off
-    
-    while elapsed_time < duration:
-        # Determine how long to stay in current state
-        toggle_duration = random.uniform(MIN_TOGGLE_DURATION, MAX_TOGGLE_DURATION)
-        
-        # Make sure we don't exceed the total duration
-        toggle_duration = min(toggle_duration, duration - elapsed_time)
-        
-        # Wait for the determined duration
-        time.sleep(toggle_duration)
-        elapsed_time += toggle_duration
-        
-        # Only toggle with certain probability (except for the last toggle, which should turn off)
-        if elapsed_time >= duration or random.random() < TOGGLE_PROBABILITY:
-            if output_state:
-                output.turn_off()
-                print("Output toggled OFF")
-            else:
-                output.turn_on()
-                print("Output toggled ON")
-            output_state = not output_state
-    
-    # Make sure output is off at the end
-    if output_state:
+    # Do a fixed number of toggles
+    for i in range(count):
+        # Toggle off
         output.turn_off()
-        print("Output turned off at end of audio")
+        print(f"\n[TOGGLE] Toggle {i+1}/{count}: Output OFF")
+        time.sleep(duration)
+        
+        # Toggle on
+        output.turn_on()
+        print(f"\n[TOGGLE] Toggle {i+1}/{count}: Output ON")
+        time.sleep(duration)
+    
+    # Always end with output off
+    output.turn_off()
+    print("\n[TOGGLE] Output OFF at end")
+    
+    print(f"\n[TOGGLE] Completed {count} toggles")
+
+# Function to do a simple scare sequence with audio
+def do_simple_scare_with_audio(audio_path=None):
+    """Perform a simple scare sequence with toggling and audio"""
+    import threading
+    import time
+    import queue
+    
+    # Turn on output
+    output.turn_on()
+    print("\n[SCARE] Output activated for scare")
+    
+    # Create a queue for communication between threads
+    audio_done_queue = queue.Queue()
+    
+    # Determine toggle count based on audio file type and size
+    toggle_count = 10  # Default toggle count
+    toggle_duration = 0.2  # Default toggle duration (seconds)
+    
+    if audio_path:
+        # Get a more accurate estimate of audio duration
+        if audio_path.lower().endswith('.wav'):
+            # For WAV files, use file size for estimation
+            file_size = os.path.getsize(audio_path)
+            # Rough estimate: 176400 bytes per second for 44.1kHz stereo
+            estimated_duration = file_size / 176400
+            
+            # For very short WAV files, use fewer toggles but make them slower
+            if estimated_duration < 1.0:
+                toggle_count = 5
+                toggle_duration = 0.3  # Slower toggles for short files
+                print(f"\n[AUDIO] Very short WAV detected: {estimated_duration:.1f} seconds, using {toggle_count} slow toggles")
+            else:
+                # Calculate toggle count based on duration (2.5 toggles per second)
+                toggle_count = max(5, min(20, int(estimated_duration * 2.5)))
+                print(f"\n[AUDIO] Estimated WAV duration: {estimated_duration:.1f} seconds, using {toggle_count} toggles")
+        elif audio_path.lower().endswith('.mp3'):
+            # MP3 files are typically longer
+            toggle_count = 15  # Use more toggles for MP3 files
+            print(f"\n[AUDIO] Using {toggle_count} toggles for MP3 file")
+    
+    # For WAV files less than 100KB, play the audio first, then do the toggling
+    if audio_path and audio_path.lower().endswith('.wav') and os.path.getsize(audio_path) < 100000:
+        print(f"\n[AUDIO] Playing audio first for short WAV file: {os.path.basename(audio_path)}")
+        # Play audio in blocking mode
+        audio.play_audio_file(audio_path, blocking=True)
+        print("\n[AUDIO] Audio playback complete, now starting toggling")
+        
+        # Now do the toggling
+        _toggle_output_fixed_count(toggle_count, toggle_duration)
+    else:
+        # For MP3 files and longer WAV files, use parallel approach
+        if audio_path:
+            # Define a wrapper function that signals when audio is done
+            def play_audio_and_signal():
+                audio.play_audio_file(audio_path, blocking=True)
+                # Signal that audio is done
+                audio_done_queue.put(True)
+                print("\n[AUDIO] Audio playback complete")
+            
+            print(f"\n[AUDIO] Starting audio playback in parallel with toggling: {os.path.basename(audio_path)}")
+            audio_thread = threading.Thread(target=play_audio_and_signal)
+            audio_thread.daemon = True
+            audio_thread.start()
+            
+            # Give audio a small head start
+            time.sleep(0.1)
+        
+        # Toggle the output with monitoring for audio completion
+        _toggle_output_with_audio_sync(toggle_count, toggle_duration, audio_done_queue)
+    
+    # Turn off output at the end
+    output.turn_off()
+
+USE_PULLUP = True    # Set to True if using internal pull-up resistor
+
+# Function to toggle output while monitoring audio completion
+def _toggle_output_with_audio_sync(count, duration=0.2, audio_done_queue=None):
+    """Toggle the output while monitoring audio completion
+    
+    Args:
+        count: Number of toggles to perform (maximum)
+        duration: Duration in seconds for each toggle state (on or off)
+        audio_done_queue: Queue to check for audio completion signal
+    """
+    import time
+    
+    print(f"\n[TOGGLE] Starting output toggling for up to {count} toggles (duration: {duration:.1f}s)")
+    
+    # Always start with output on
+    output.turn_on()
+    print("\n[TOGGLE] Output ON")
+    time.sleep(duration)
+    
+    # Check if audio is already done before we even start toggling
+    audio_done = False
+    try:
+        if audio_done_queue and not audio_done_queue.empty():
+            audio_done = audio_done_queue.get_nowait()
+    except Exception:
+        pass
+    
+    # Do a fixed number of toggles or until audio is done
+    for i in range(count):
+        # If audio is done, stop toggling
+        if audio_done:
+            print("\n[TOGGLE] Audio playback complete, stopping toggle early")
+            break
+            
+        # Toggle off
+        output.turn_off()
+        print(f"\n[TOGGLE] Toggle {i+1}/{count}: Output OFF")
+        time.sleep(duration)
+        
+        # Check if audio is done
+        try:
+            if audio_done_queue and not audio_done_queue.empty():
+                audio_done = audio_done_queue.get_nowait()
+                if audio_done:
+                    print("\n[TOGGLE] Audio playback complete, stopping toggle after this cycle")
+        except Exception:
+            pass
+        
+        # Toggle on
+        output.turn_on()
+        print(f"\n[TOGGLE] Toggle {i+1}/{count}: Output ON")
+        time.sleep(duration)
+        
+        # Check if audio is done again
+        try:
+            if audio_done_queue and not audio_done_queue.empty():
+                audio_done = audio_done_queue.get_nowait()
+                if audio_done:
+                    print("\n[TOGGLE] Audio playback complete, stopping toggle after this cycle")
+        except Exception:
+            pass
+    
+    # Always end with output off
+    output.turn_off()
+    print("\n[TOGGLE] Output OFF at end")
+    
+    print(f"\n[TOGGLE] Completed toggling")
+
+# Original toggle function kept for short WAV files
 
 # Define the response to button press
 def button_pressed():
     """Function called when button is pressed to trigger Halloween scare"""
     global SCARE_IN_PROGRESS, LAST_ACTIVITY_TIME, IDLE_SOUND_PLAYED
     
-    # Update the last activity time
-    LAST_ACTIVITY_TIME = time.time()
+    # Update the last activity time - with error handling
+    try:
+        import time as button_time  # Local import to avoid any shadowing issues
+        LAST_ACTIVITY_TIME = button_time.time()
+    except Exception as e:
+        print(f"\n[ERROR] Error updating activity time: {e}")
+        # Use a fallback value if time module fails
+        LAST_ACTIVITY_TIME = LAST_ACTIVITY_TIME + 1 if 'LAST_ACTIVITY_TIME' in globals() else 0
+    
     IDLE_SOUND_PLAYED = False
     
     # Check if a scare is already in progress
     if SCARE_IN_PROGRESS:
-        print("Scare already in progress. Ignoring trigger.")
+        print("\n[SYSTEM] Scare already in progress. Ignoring trigger.")
         return
     
     # Set the flag to indicate a scare is in progress
     SCARE_IN_PROGRESS = True
     
-    print("Button pressed! Activating Halloween scare...")
-    
-    # Turn on output device (LED or relay) first
-    output.turn_on()  # Turn on immediately
-    print("Output device activated")
+    print("\n[SYSTEM] Button pressed! Activating Halloween scare...")
     
     try:
-        # Check for custom audio files
-        audio_files = audio.list_audio_files()
+        # Check if audio files are available
+        audio_files = os.listdir(audio.audio_dir)
+        audio_path = None
+        
+        # Stop any currently playing audio first
+        audio.stop_audio()
+        
+        # Select an audio file if available
         if audio_files:
-            # Play a random audio file if available
-            import random
-            import os
-            import time
-            
-            # Filter for common audio formats
+            # Filter for valid audio files
             valid_audio_files = [f for f in audio_files if f.lower().endswith(('.wav', '.mp3', '.ogg'))]
             
             if valid_audio_files:
+                import random
                 random_file = random.choice(valid_audio_files)
                 audio_path = os.path.join(audio.audio_dir, random_file)
-                print(f"Playing Halloween audio: {random_file}")
-                
-                # Stop any currently playing audio first
-                audio.stop_audio()
-                
-                # Play the audio file
-                success = audio.play_audio_file(audio_path)
-                
-                if success:
-                        # For WAV files, we'll use a blocking approach
-                    if random_file.lower().endswith('.wav'):
-                        # For WAV files, play_audio_file is already blocking, so we don't need to wait
-                        # The function will return when playback is complete
-                        print("WAV playback complete, continuing...")
-                    # For MP3 files, we can estimate duration
-                    elif random_file.lower().endswith('.mp3'):
-                        try:
-                            # Try to get duration info using a subprocess
-                            import subprocess
-                            import random
-                            result = subprocess.run(["mpg123", "--skip", "0", "--test", audio_path], 
-                                                  capture_output=True, text=True, check=False)
-                            
-                            # Look for duration in output
-                            import re
-                            duration_match = re.search(r'(\d+):(\d+)\.(\d+)', result.stderr)
-                            if duration_match:
-                                mins, secs, _ = duration_match.groups()
-                                duration = int(mins) * 60 + int(secs)
-                                print(f"Audio duration: approximately {duration} seconds")
-                                
-                                # If duration is long enough, do random toggling
-                                if duration > 5:  # Only toggle for audio longer than 5 seconds
-                                    _toggle_output_during_playback(duration)
-                                else:
-                                    # For shorter audio, just wait
-                                    time.sleep(duration)
-                            else:
-                                # Default wait time if we can't determine duration
-                                _toggle_output_during_playback(10)  # Toggle during 10 seconds
-                        except Exception as e:
-                            print(f"Error determining audio duration: {e}")
-                            _toggle_output_during_playback(10)  # Toggle during 10 seconds
-                    else:
-                        # For other formats, wait a default time and toggle
-                        _toggle_output_during_playback(10)  # Toggle during 10 seconds
-                else:
-                    print("Failed to play audio file, falling back to default sounds")
-                    # Fall back to default sounds with toggling
-                    output.turn_on()  # Make sure output is on at start
-                    audio.play_alarm(1.0)
-                    _toggle_output_during_playback(2)  # Toggle during alarm
-            else:
-                print("No valid audio files found, using default sounds")
-                output.turn_on()  # Make sure output is on at start
-                audio.play_alarm(1.0)
-                _toggle_output_during_playback(2)  # Toggle during alarm
-        else:
-            # No audio files available, play default scary sounds
-            print("No audio files found, playing default scary sounds")
-            
-            # Play a spooky alarm sound with output toggling
-            output.turn_on()  # Make sure output is on at start
+                print(f"\n[AUDIO] Selected Halloween audio: {random_file}")
+        
+        # Do the scare sequence with audio playing simultaneously
+        print("\n[SYSTEM] Starting scare sequence with synchronized audio")
+        do_simple_scare_with_audio(audio_path)
+        
+        # If no audio was played (or if it failed), play a default sound
+        if not audio_path:
+            print("\n[AUDIO] No audio files found, playing default scary sounds")
             audio.play_alarm(1.0)
-            _toggle_output_during_playback(2)  # Toggle during alarm
             
-            # Play an eerie melody with output toggling
+            # Play an eerie melody
             notes = [196, 147, 196, 220, 196, 147, 110]  # Spooky low notes
             durations = [0.3, 0.3, 0.3, 0.5, 0.3, 0.3, 0.8]
+            print("\n[AUDIO] Playing eerie melody")
             audio.play_melody(notes, durations)
-            _toggle_output_during_playback(3)  # Toggle during melody
     
     finally:
         # Always turn off the output device when done, regardless of errors
-        print("Turning off output device")
+        print("\n[SYSTEM] Turning off output device")
         output.turn_off()
         
-        # Reset the flag to allow new scares and update activity time
+        # Reset the flags to allow new scares and update activity time
         SCARE_IN_PROGRESS = False
-        LAST_ACTIVITY_TIME = time.time()  # Reset activity timer after scare completes
+        try:
+            import time as cleanup_time
+            LAST_ACTIVITY_TIME = cleanup_time.time()  # Reset activity timer after scare completes
+        except Exception as e:
+            print(f"\n[ERROR] Error updating activity time during cleanup: {e}")
+            # Use a fallback value if time module fails
+            LAST_ACTIVITY_TIME = LAST_ACTIVITY_TIME + 1 if 'LAST_ACTIVITY_TIME' in globals() else 0
         IDLE_SOUND_PLAYED = False  # Reset idle sound flag
         
-    print("Halloween scare complete")
+    print("\n[SYSTEM] Halloween scare complete")
 
 
 # Initialize components
@@ -287,7 +384,12 @@ except Exception as e:
     sys.exit(1)
 
 # Reset activity timer at startup
-LAST_ACTIVITY_TIME = time.time()
+try:
+    LAST_ACTIVITY_TIME = time.time()
+except Exception as e:
+    print(f"Error setting initial activity time: {e}")
+    LAST_ACTIVITY_TIME = 0
+LAST_IDLE_SOUND_TIME = 0  # Initialize to 0 so idle sounds can play immediately
 IDLE_SOUND_PLAYED = False
 
 # Test components on startup
@@ -481,7 +583,7 @@ if USE_GUI:
 # Function to play a random idle sound
 def play_idle_sound():
     """Play a random idle sound when there has been no activity for a while"""
-    global IDLE_SOUND_PLAYED, LAST_IDLE_SOUND
+    global IDLE_SOUND_PLAYED, LAST_IDLE_SOUND, LAST_IDLE_SOUND_TIME
     
     # Create idle sounds directory if it doesn't exist
     os.makedirs(IDLE_SOUNDS_DIR, exist_ok=True)
@@ -500,6 +602,12 @@ def play_idle_sound():
                 audio.play_audio_file(default_sound, volume=0.7)
                 IDLE_SOUND_PLAYED = True
                 LAST_IDLE_SOUND = default_sound
+                try:
+                    import time as idle_time
+                    LAST_IDLE_SOUND_TIME = idle_time.time()  # Record when the idle sound was played
+                except Exception as e:
+                    print(f"Error updating idle sound time: {e}")
+                    LAST_IDLE_SOUND_TIME = LAST_ACTIVITY_TIME  # Use activity time as fallback
                 print("Default idle sound played at 70% volume")
         else:
             print(f"Warning: No idle sounds found in {IDLE_SOUNDS_DIR}")
@@ -521,15 +629,34 @@ def play_idle_sound():
             audio.play_audio_file(idle_sound_path, volume=0.7)
             IDLE_SOUND_PLAYED = True
             LAST_IDLE_SOUND = idle_sound_path
+            try:
+                import time as idle_time
+                LAST_IDLE_SOUND_TIME = idle_time.time()  # Record when the idle sound was played
+            except Exception as e:
+                print(f"Error updating idle sound time: {e}")
+                LAST_IDLE_SOUND_TIME = LAST_ACTIVITY_TIME  # Use activity time as fallback
             print(f"Idle sound played: {selected_file} at 70% volume")
 
 # Function to check for inactivity
 def check_inactivity():
     """Check if system has been inactive for the standby timeout period"""
-    global LAST_ACTIVITY_TIME, IDLE_SOUND_PLAYED
+    global LAST_ACTIVITY_TIME, IDLE_SOUND_PLAYED, LAST_IDLE_SOUND_TIME
     
-    current_time = time.time()
-    inactive_time = current_time - LAST_ACTIVITY_TIME
+    try:
+        import time as check_time
+        current_time = check_time.time()
+        inactive_time = current_time - LAST_ACTIVITY_TIME
+    except Exception as e:
+        print(f"Error checking inactivity time: {e}")
+        # Use a fallback approach that will trigger idle sounds occasionally
+        import random
+        current_time = LAST_ACTIVITY_TIME + random.randint(STANDBY_TIMEOUT - 10, STANDBY_TIMEOUT + 10)
+        inactive_time = current_time - LAST_ACTIVITY_TIME
+    
+    # Check if it's time to reset the idle sound flag
+    if IDLE_SOUND_PLAYED and (current_time - LAST_IDLE_SOUND_TIME) >= IDLE_REPEAT_INTERVAL:
+        print(f"It's been {int(current_time - LAST_IDLE_SOUND_TIME)} seconds since the last idle sound. Ready to play another.")
+        IDLE_SOUND_PLAYED = False
     
     # If we've been inactive for the timeout period and not in a scare
     if inactive_time >= STANDBY_TIMEOUT and not SCARE_IN_PROGRESS and not IDLE_SOUND_PLAYED:
@@ -544,7 +671,7 @@ print("2. Pico Pi programmed as a keyboard")
 print("3. Physical keyboard 'w' key press")
 print("4. SSH terminal keyboard input")
 print("5. GUI button click (if GUI is enabled)")
-print(f"6. Random idle sounds will play after {STANDBY_TIMEOUT} seconds of inactivity")
+print(f"6. Random idle sounds will play after {STANDBY_TIMEOUT} seconds of inactivity and repeat every {IDLE_REPEAT_INTERVAL} seconds")
 try:
     # Blink LED to indicate system is ready
     output.blink(3, 0.1, 0.1)
