@@ -53,8 +53,8 @@ IDLE_SOUND_PLAYED = False  # Track if idle sound has been played
 LAST_IDLE_SOUND = ""  # Track the last idle sound played to avoid repetition
 
 # Output toggle configuration
-MIN_TOGGLE_DURATION = 0.5  # Minimum duration for output to stay on/off (in seconds)
-MAX_TOGGLE_DURATION = 0.5  # Maximum duration for output to stay on/off (in seconds)
+MIN_TOGGLE_DURATION = 0.2  # Minimum duration for output to stay on/off (in seconds)
+MAX_TOGGLE_DURATION = 0.2  # Maximum duration for output to stay on/off (in seconds)
 TOGGLE_PROBABILITY = 0.98   # Probability of toggling during longer audio playback
 
 USE_PULLUP = True    # Set to True if using internal pull-up resistor
