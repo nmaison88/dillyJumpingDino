@@ -496,11 +496,11 @@ def play_idle_sound():
         default_sound = os.path.join(AUDIO_DIR, "Snarl new.wav")
         if os.path.exists(default_sound):
             if not IDLE_SOUND_PLAYED:
-                print(f"No activity for {STANDBY_TIMEOUT} seconds. Playing default idle sound...")
-                audio.play_audio_file(default_sound)
+                print(f"No activity for {STANDBY_TIMEOUT} seconds. Playing default idle sound at 70% volume...")
+                audio.play_audio_file(default_sound, volume=0.7)
                 IDLE_SOUND_PLAYED = True
                 LAST_IDLE_SOUND = default_sound
-                print("Default idle sound played")
+                print("Default idle sound played at 70% volume")
         else:
             print(f"Warning: No idle sounds found in {IDLE_SOUNDS_DIR}")
             print(f"Add .wav, .mp3, or .ogg files to this directory for idle sounds")
@@ -517,11 +517,11 @@ def play_idle_sound():
             selected_file = random.choice(available_files)
             idle_sound_path = os.path.join(IDLE_SOUNDS_DIR, selected_file)
             
-            print(f"No activity for {STANDBY_TIMEOUT} seconds. Playing idle sound: {selected_file}")
-            audio.play_audio_file(idle_sound_path)
+            print(f"No activity for {STANDBY_TIMEOUT} seconds. Playing idle sound: {selected_file} at 70% volume")
+            audio.play_audio_file(idle_sound_path, volume=0.7)
             IDLE_SOUND_PLAYED = True
             LAST_IDLE_SOUND = idle_sound_path
-            print(f"Idle sound played: {selected_file}")
+            print(f"Idle sound played: {selected_file} at 70% volume")
 
 # Function to check for inactivity
 def check_inactivity():

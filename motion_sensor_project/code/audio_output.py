@@ -208,12 +208,13 @@ class AudioOutput:
             print(f"Error listing audio files: {e}")
             return []
     
-    def play_audio_file(self, filename):
+    def play_audio_file(self, filename, volume=1.0):
         """
         Play an audio file.
         
         Args:
             filename: Path to the audio file
+            volume: Volume level from 0.0 to 1.0 (default: 1.0 = maximum)
         """
         if not os.path.exists(filename):
             print(f"Audio file not found: {filename}")
@@ -253,6 +254,9 @@ class AudioOutput:
                 # Method 3: Try pygame
                 if PYGAME_AVAILABLE:
                     try:
+                        # Set volume
+                        pygame.mixer.music.set_volume(volume)
+                        
                         pygame.mixer.music.load(filename)
                         pygame.mixer.music.play()
                         # Wait for playback to complete
@@ -276,8 +280,8 @@ class AudioOutput:
             # Method 1: Try pygame first
             if PYGAME_AVAILABLE:
                 try:
-                    # Set volume to maximum
-                    pygame.mixer.music.set_volume(1.0)
+                    # Set volume according to parameter
+                    pygame.mixer.music.set_volume(volume)
                     
                     # Load and play the file
                     pygame.mixer.music.load(filename)
@@ -295,7 +299,9 @@ class AudioOutput:
             # Method 2: Try mpg123 with specific output device (headphone jack)
             try:
                 # Try to use the headphone jack directly (card 1)
-                cmd = ["mpg123", "-a", "hw:1,0", "-q", filename]
+                # Convert volume (0.0-1.0) to mpg123 scale (0-100)
+                vol_percent = int(volume * 100)
+                cmd = ["mpg123", "-a", "hw:1,0", "-q", "--scale", str(vol_percent), filename]
                 print(f"Playing with command: {' '.join(cmd)}")
                 process = subprocess.Popen(cmd)
                 
@@ -309,7 +315,9 @@ class AudioOutput:
             
             # Method 3: Standard mpg123
             try:
-                cmd = ["mpg123", "-q", filename]
+                # Convert volume (0.0-1.0) to mpg123 scale (0-100)
+                vol_percent = int(volume * 100)
+                cmd = ["mpg123", "-q", "--scale", str(vol_percent), filename]
                 print(f"Playing with command: {' '.join(cmd)}")
                 process = subprocess.Popen(cmd)
                 
@@ -328,6 +336,9 @@ class AudioOutput:
             # Try pygame first
             if PYGAME_AVAILABLE:
                 try:
+                    # Set volume
+                    pygame.mixer.music.set_volume(volume)
+                    
                     pygame.mixer.music.load(filename)
                     pygame.mixer.music.play()
                     time.sleep(0.1)
@@ -341,9 +352,15 @@ class AudioOutput:
             try:
                 # Choose the appropriate command based on file type
                 if filename.lower().endswith('.ogg'):
-                    cmd = ["ogg123", "-d", "alsa", "-q", filename]  # Specify ALSA output
+                    # Convert volume (0.0-1.0) to ogg123 scale (0.0-1.0)
+                    cmd = ["ogg123", "-d", "alsa", "-q", "--volume", str(volume), filename]  # Specify ALSA output
                 else:
-                    cmd = ["aplay", "-D", "plughw:0,0", "-q", filename]  # Try with device specification
+                    # aplay doesn't have direct volume control, we'll use softvol plugin if needed
+                    vol_percent = int(volume * 100)
+                    if volume < 1.0:
+                        cmd = ["aplay", "-D", f"softvol:softvol=volume={vol_percent}", "-q", filename]
+                    else:
+                        cmd = ["aplay", "-D", "plughw:0,0", "-q", filename]  # Try with device specification
                     
                 print(f"Playing with command: {' '.join(cmd)}")
                 process = subprocess.Popen(cmd)
@@ -409,14 +426,15 @@ class AudioOutput:
         # We'll avoid the aggressive pkill approach as it might be causing the double free
         # Instead, we'll just make sure our own process is properly terminated
     
-    def play_audio_async(self, filename):
+    def play_audio_async(self, filename, volume=1.0):
         """
         Play audio file asynchronously (in a separate thread).
         
         Args:
             filename: Path to the audio file
+            volume: Volume level from 0.0 to 1.0 (default: 1.0 = maximum)
         """
-        thread = threading.Thread(target=self.play_audio_file, args=(filename,))
+        thread = threading.Thread(target=self.play_audio_file, args=(filename, volume))
         thread.daemon = True  # Thread will exit when main program exits
         thread.start()
         return thread
