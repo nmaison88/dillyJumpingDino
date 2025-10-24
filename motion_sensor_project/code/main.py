@@ -37,18 +37,25 @@ BUTTON_PIN = 17      # Button pin (BCM numbering)
 OUTPUT_PIN = 18      # LED/Relay pin (BCM numbering)
 KEYBOARD_KEY = 'w'   # Keyboard key to trigger the scare
 
-# Global flag to track if a scare is currently in progress
-SCARE_IN_PROGRESS = False
-
-# Output toggle configuration
-MIN_TOGGLE_DURATION = 0.5  # Minimum duration for output to stay on/off (in seconds)
-MAX_TOGGLE_DURATION = 1.0  # Maximum duration for output to stay on/off (in seconds)
-TOGGLE_PROBABILITY = 0.9   # Probability of toggling during longer audio playback
-
 # Use audio files from the project directory
 import os
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AUDIO_DIR = os.path.join(PROJECT_DIR, "audio_files")  # Audio files in project directory
+
+# Global flag to track if a scare is currently in progress
+SCARE_IN_PROGRESS = False
+
+# Idle sounds configuration
+IDLE_SOUNDS_DIR = os.path.join(PROJECT_DIR, "idle_sounds")  # Directory for idle sounds
+STANDBY_TIMEOUT = 240  # Time in seconds (4 minutes) before playing idle sound
+LAST_ACTIVITY_TIME = time.time()  # Track when the last activity occurred
+IDLE_SOUND_PLAYED = False  # Track if idle sound has been played
+LAST_IDLE_SOUND = ""  # Track the last idle sound played to avoid repetition
+
+# Output toggle configuration
+MIN_TOGGLE_DURATION = 0.5  # Minimum duration for output to stay on/off (in seconds)
+MAX_TOGGLE_DURATION = 0.5  # Maximum duration for output to stay on/off (in seconds)
+TOGGLE_PROBABILITY = 0.98   # Probability of toggling during longer audio playback
 
 USE_PULLUP = True    # Set to True if using internal pull-up resistor
 
@@ -94,7 +101,11 @@ def _toggle_output_during_playback(duration):
 # Define the response to button press
 def button_pressed():
     """Function called when button is pressed to trigger Halloween scare"""
-    global SCARE_IN_PROGRESS
+    global SCARE_IN_PROGRESS, LAST_ACTIVITY_TIME, IDLE_SOUND_PLAYED
+    
+    # Update the last activity time
+    LAST_ACTIVITY_TIME = time.time()
+    IDLE_SOUND_PLAYED = False
     
     # Check if a scare is already in progress
     if SCARE_IN_PROGRESS:
@@ -202,8 +213,10 @@ def button_pressed():
         print("Turning off output device")
         output.turn_off()
         
-        # Reset the flag to allow new scares
+        # Reset the flag to allow new scares and update activity time
         SCARE_IN_PROGRESS = False
+        LAST_ACTIVITY_TIME = time.time()  # Reset activity timer after scare completes
+        IDLE_SOUND_PLAYED = False  # Reset idle sound flag
         
     print("Halloween scare complete")
 
@@ -272,6 +285,10 @@ try:
 except Exception as e:
     print(f"Error initializing components: {e}")
     sys.exit(1)
+
+# Reset activity timer at startup
+LAST_ACTIVITY_TIME = time.time()
+IDLE_SOUND_PLAYED = False
 
 # Test components on startup
 print("\nTesting components:")
@@ -461,6 +478,63 @@ if USE_GUI:
         print("Continuing without GUI")
         USE_GUI = False
 
+# Function to play a random idle sound
+def play_idle_sound():
+    """Play a random idle sound when there has been no activity for a while"""
+    global IDLE_SOUND_PLAYED, LAST_IDLE_SOUND
+    
+    # Create idle sounds directory if it doesn't exist
+    os.makedirs(IDLE_SOUNDS_DIR, exist_ok=True)
+    
+    # Get list of idle sound files
+    idle_files = [f for f in os.listdir(IDLE_SOUNDS_DIR) 
+                 if f.lower().endswith(('.wav', '.mp3', '.ogg'))]
+    
+    # If no idle sounds in the dedicated directory, try using a sound from the main audio directory
+    if not idle_files:
+        # Check if we have the default "Snarl new.wav" in the audio directory
+        default_sound = os.path.join(AUDIO_DIR, "Snarl new.wav")
+        if os.path.exists(default_sound):
+            if not IDLE_SOUND_PLAYED:
+                print(f"No activity for {STANDBY_TIMEOUT} seconds. Playing default idle sound...")
+                audio.play_audio_file(default_sound)
+                IDLE_SOUND_PLAYED = True
+                LAST_IDLE_SOUND = default_sound
+                print("Default idle sound played")
+        else:
+            print(f"Warning: No idle sounds found in {IDLE_SOUNDS_DIR}")
+            print(f"Add .wav, .mp3, or .ogg files to this directory for idle sounds")
+    else:
+        if not IDLE_SOUND_PLAYED:
+            # Select a random idle sound, avoiding the last one played if possible
+            import random
+            available_files = [f for f in idle_files if os.path.join(IDLE_SOUNDS_DIR, f) != LAST_IDLE_SOUND]
+            
+            # If all files have been played or only one file exists, use all files
+            if not available_files:
+                available_files = idle_files
+                
+            selected_file = random.choice(available_files)
+            idle_sound_path = os.path.join(IDLE_SOUNDS_DIR, selected_file)
+            
+            print(f"No activity for {STANDBY_TIMEOUT} seconds. Playing idle sound: {selected_file}")
+            audio.play_audio_file(idle_sound_path)
+            IDLE_SOUND_PLAYED = True
+            LAST_IDLE_SOUND = idle_sound_path
+            print(f"Idle sound played: {selected_file}")
+
+# Function to check for inactivity
+def check_inactivity():
+    """Check if system has been inactive for the standby timeout period"""
+    global LAST_ACTIVITY_TIME, IDLE_SOUND_PLAYED
+    
+    current_time = time.time()
+    inactive_time = current_time - LAST_ACTIVITY_TIME
+    
+    # If we've been inactive for the timeout period and not in a scare
+    if inactive_time >= STANDBY_TIMEOUT and not SCARE_IN_PROGRESS and not IDLE_SOUND_PLAYED:
+        play_idle_sound()
+
 # Main loop
 print("\nHalloween scare system ready!")
 print(f"Press the button or the '{KEYBOARD_KEY}' key to trigger...")
@@ -470,13 +544,17 @@ print("2. Pico Pi programmed as a keyboard")
 print("3. Physical keyboard 'w' key press")
 print("4. SSH terminal keyboard input")
 print("5. GUI button click (if GUI is enabled)")
+print(f"6. Random idle sounds will play after {STANDBY_TIMEOUT} seconds of inactivity")
 try:
     # Blink LED to indicate system is ready
     output.blink(3, 0.1, 0.1)
     
     print("Press Ctrl+C to exit")
     while True:
-        # Main program can do other things here if needed
+        # Check for inactivity
+        check_inactivity()
+        
+        # Sleep for a short time to avoid high CPU usage
         time.sleep(1)
         
 except KeyboardInterrupt:
