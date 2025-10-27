@@ -149,7 +149,21 @@ def do_simple_scare_with_audio(audio_path=None):
         if audio_path:
             # Define a wrapper function that signals when audio is done
             def play_audio_and_signal():
+                import time
+                start_time = time.time()
+                
+                # Play the audio file
                 audio.play_audio_file(audio_path, blocking=True)
+                
+                # For MP3 files, ensure a minimum playback time of 1.5 seconds
+                # This is because some MP3 files might finish too quickly due to Pygame issues
+                if audio_path.lower().endswith('.mp3'):
+                    elapsed = time.time() - start_time
+                    min_playback_time = 1.5  # Minimum playback time in seconds
+                    if elapsed < min_playback_time:
+                        print(f"\n[AUDIO] Ensuring minimum playback time for MP3 file ({min_playback_time:.1f}s)")
+                        time.sleep(min_playback_time - elapsed)
+                
                 # Signal that audio is done
                 audio_done_queue.put(True)
                 print("\n[AUDIO] Audio playback complete")
@@ -163,7 +177,9 @@ def do_simple_scare_with_audio(audio_path=None):
             time.sleep(0.1)
         
         # Toggle the output with monitoring for audio completion
-        _toggle_output_with_audio_sync(toggle_count, toggle_duration, audio_done_queue)
+        # Pass is_mp3=True if it's an MP3 file so we can check pygame.mixer.music.get_busy()
+        is_mp3 = audio_path and audio_path.lower().endswith('.mp3')
+        _toggle_output_with_audio_sync(toggle_count, toggle_duration, audio_done_queue, is_mp3)
     
     # Turn off output at the end
     output.turn_off()
@@ -171,15 +187,17 @@ def do_simple_scare_with_audio(audio_path=None):
 USE_PULLUP = True    # Set to True if using internal pull-up resistor
 
 # Function to toggle output while monitoring audio completion
-def _toggle_output_with_audio_sync(count, duration=0.2, audio_done_queue=None):
+def _toggle_output_with_audio_sync(count, duration=0.2, audio_done_queue=None, is_mp3=False):
     """Toggle the output while monitoring audio completion
     
     Args:
         count: Number of toggles to perform (maximum)
         duration: Duration in seconds for each toggle state (on or off)
         audio_done_queue: Queue to check for audio completion signal
+        is_mp3: Whether the audio file is an MP3 (to check pygame.mixer.music.get_busy())
     """
     import time
+    import pygame
     
     print(f"\n[TOGGLE] Starting output toggling for up to {count} toggles (duration: {duration:.1f}s)")
     
@@ -193,8 +211,13 @@ def _toggle_output_with_audio_sync(count, duration=0.2, audio_done_queue=None):
     try:
         if audio_done_queue and not audio_done_queue.empty():
             audio_done = audio_done_queue.get_nowait()
-    except Exception:
-        pass
+        # For MP3 files, also check pygame.mixer.music.get_busy()
+        elif is_mp3 and 'pygame' in sys.modules and hasattr(pygame.mixer.music, 'get_busy'):
+            if not pygame.mixer.music.get_busy():
+                audio_done = True
+                print("\n[TOGGLE] Audio playback already complete (detected by pygame)")
+    except Exception as e:
+        print(f"\n[TOGGLE] Error checking audio status: {e}")
     
     # Do a fixed number of toggles or until audio is done
     for i in range(count):
@@ -214,8 +237,13 @@ def _toggle_output_with_audio_sync(count, duration=0.2, audio_done_queue=None):
                 audio_done = audio_done_queue.get_nowait()
                 if audio_done:
                     print("\n[TOGGLE] Audio playback complete, stopping toggle after this cycle")
-        except Exception:
-            pass
+            # For MP3 files, also check pygame.mixer.music.get_busy()
+            elif is_mp3 and 'pygame' in sys.modules and hasattr(pygame.mixer.music, 'get_busy'):
+                if not pygame.mixer.music.get_busy():
+                    audio_done = True
+                    print("\n[TOGGLE] Audio playback complete (detected by pygame), stopping toggle after this cycle")
+        except Exception as e:
+            print(f"\n[TOGGLE] Error checking audio status: {e}")
         
         # Toggle on
         output.turn_on()
@@ -228,8 +256,13 @@ def _toggle_output_with_audio_sync(count, duration=0.2, audio_done_queue=None):
                 audio_done = audio_done_queue.get_nowait()
                 if audio_done:
                     print("\n[TOGGLE] Audio playback complete, stopping toggle after this cycle")
-        except Exception:
-            pass
+            # For MP3 files, also check pygame.mixer.music.get_busy()
+            elif is_mp3 and 'pygame' in sys.modules and hasattr(pygame.mixer.music, 'get_busy'):
+                if not pygame.mixer.music.get_busy():
+                    audio_done = True
+                    print("\n[TOGGLE] Audio playback complete (detected by pygame), stopping toggle after this cycle")
+        except Exception as e:
+            print(f"\n[TOGGLE] Error checking audio status: {e}")
     
     # Always end with output off
     output.turn_off()
