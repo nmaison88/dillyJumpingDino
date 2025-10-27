@@ -236,12 +236,16 @@ def _toggle_output_with_audio_sync(count, duration=0.2, audio_done_queue=None, i
             if audio_done_queue and not audio_done_queue.empty():
                 audio_done = audio_done_queue.get_nowait()
                 if audio_done:
-                    print("\n[TOGGLE] Audio playback complete, stopping toggle after this cycle")
+                    print("\n[TOGGLE] Audio playback complete, stopping toggle immediately")
+                    # Break immediately - don't complete this cycle
+                    break
             # For MP3 files, also check pygame.mixer.music.get_busy()
             elif is_mp3 and 'pygame' in sys.modules and hasattr(pygame.mixer.music, 'get_busy'):
                 if not pygame.mixer.music.get_busy():
                     audio_done = True
-                    print("\n[TOGGLE] Audio playback complete (detected by pygame), stopping toggle after this cycle")
+                    print("\n[TOGGLE] Audio playback complete (detected by pygame), stopping toggle immediately")
+                    # Break immediately - don't complete this cycle
+                    break
         except Exception as e:
             print(f"\n[TOGGLE] Error checking audio status: {e}")
         
@@ -255,18 +259,25 @@ def _toggle_output_with_audio_sync(count, duration=0.2, audio_done_queue=None, i
             if audio_done_queue and not audio_done_queue.empty():
                 audio_done = audio_done_queue.get_nowait()
                 if audio_done:
-                    print("\n[TOGGLE] Audio playback complete, stopping toggle after this cycle")
+                    print("\n[TOGGLE] Audio playback complete, stopping toggle immediately")
+                    # Break immediately - don't complete this cycle
+                    break
             # For MP3 files, also check pygame.mixer.music.get_busy()
             elif is_mp3 and 'pygame' in sys.modules and hasattr(pygame.mixer.music, 'get_busy'):
                 if not pygame.mixer.music.get_busy():
                     audio_done = True
-                    print("\n[TOGGLE] Audio playback complete (detected by pygame), stopping toggle after this cycle")
+                    print("\n[TOGGLE] Audio playback complete (detected by pygame), stopping toggle immediately")
+                    # Break immediately - don't complete this cycle
+                    break
         except Exception as e:
             print(f"\n[TOGGLE] Error checking audio status: {e}")
     
-    # Always end with output off
+    # Always end with output off (if it's not already off)
     output.turn_off()
-    print("\n[TOGGLE] Output OFF at end")
+    if audio_done:
+        print("\n[TOGGLE] Output turned OFF - audio complete")
+    else:
+        print("\n[TOGGLE] Output OFF at end")
     
     print(f"\n[TOGGLE] Completed toggling")
 
